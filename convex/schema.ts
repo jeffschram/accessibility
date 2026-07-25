@@ -83,8 +83,25 @@ export default defineSchema({
     priority: severity,
     riskNotes: v.optional(v.string()),
     testStatus,
+    // Discovery provenance. All optional so rows created by hand — or before
+    // discovery existed — stay valid.
+    discoverySource: v.optional(
+      v.union(v.literal("manual"), v.literal("sitemap"), v.literal("crawl")),
+    ),
+    discoveryDepth: v.optional(v.number()),
+    /** Normalized URL, used to dedupe across discovery runs and sources. */
+    normalizedUrl: v.optional(v.string()),
+    /** Template cluster: routePattern, or a structural fingerprint when computed. */
+    clusterKey: v.optional(v.string()),
+    clusterSize: v.optional(v.number()),
+    /** Proposed as the sample page for its cluster (WCAG-EM style sampling). */
+    isRepresentative: v.optional(v.boolean()),
+    /** Set once promoted into the inventory, so promotion is idempotent. */
+    promotedPageId: v.optional(v.id("auditPages")),
     updatedAt: v.number(),
-  }).index("by_audit", ["auditId"]),
+  })
+    .index("by_audit", ["auditId"])
+    .index("by_audit_url", ["auditId", "normalizedUrl"]),
 
   auditPages: defineTable({
     auditId: v.id("audits"),
