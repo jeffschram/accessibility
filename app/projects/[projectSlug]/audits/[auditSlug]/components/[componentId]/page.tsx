@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
-import { ArrowLeft, ClipboardCheck } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -15,12 +14,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 type CheckStatus = "not_started" | "pass" | "fail" | "not_applicable" | "needs_review";
 
 export default function ComponentDetailPage() {
-  const params = useParams<{ projectId: string; auditId: string; componentId: string }>();
-  const projectId = params.projectId as Id<"projects">;
-  const auditId = params.auditId as Id<"audits">;
+  const params = useParams<{ projectSlug: string; auditSlug: string; componentId: string }>();
+  const { projectSlug, auditSlug } = params;
   const componentId = params.componentId as Id<"auditComponents">;
-  const project = useQuery(api.projects.get, { projectId });
-  const audit = useQuery(api.audits.get, { auditId });
+  const resolved = useQuery(api.audits.getBySlug, { projectSlug, auditSlug });
   const componentDetail = useQuery(api.inventory.getComponentDetail, { componentId });
   const ensureComponentChecks = useMutation(api.inventory.ensureComponentChecks);
   const updateComponentCheck = useMutation(api.inventory.updateComponentCheck);
@@ -31,7 +28,7 @@ export default function ComponentDetailPage() {
     }
   }, [componentDetail, componentId, ensureComponentChecks]);
 
-  if (project === undefined || audit === undefined || componentDetail === undefined) {
+  if (resolved === undefined || componentDetail === undefined) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -41,16 +38,17 @@ export default function ComponentDetailPage() {
     );
   }
 
-  if (project === null || audit === null || componentDetail === null) {
+  if (resolved === null || componentDetail === null) {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: "Audit" },
+              { label: "Component not found" },
+            ]}
+          />
           <Card>
             <CardContent className="p-6">
               <h1 className="text-lg font-semibold text-slate-950">Component not found</h1>
@@ -72,19 +70,16 @@ export default function ComponentDetailPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Home" },
+            { href: `/projects/${projectSlug}`, label: resolved.project.name },
+            { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: resolved.audit.name },
+            { label: component.name },
+          ]}
+        />
 
         <header className="border-b border-slate-200 pb-6">
-          <p className="text-sm font-medium text-sky-700">
-            {project.name} / {audit.name}
-          </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
             {component.name}
           </h1>

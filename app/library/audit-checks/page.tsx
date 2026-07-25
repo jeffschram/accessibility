@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -116,14 +116,13 @@ export default function AuditChecksPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href="/library">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to library
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Home" },
+            { href: "/library", label: "Library" },
+            { label: "Audit checks" },
+          ]}
+        />
 
         <header className="border-b border-slate-200 pb-6">
           <p className="text-sm font-medium text-sky-700">Audit Library</p>

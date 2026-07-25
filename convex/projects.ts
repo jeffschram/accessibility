@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { projectBySlugOrId } from "./slugs";
 
 export const list = query({
   args: {},
@@ -12,6 +13,14 @@ export const get = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.projectId);
+  },
+});
+
+/** Accepts a slug or a raw ID so links predating slugs keep working. */
+export const getBySlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    return await projectBySlugOrId(ctx, args.slug);
   },
 });
 

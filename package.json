@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "convex:dev": "convex dev",
+    "discover": "node scripts/discovery/discover.mjs",
+    "scan": "node scripts/scans/scan.mjs",
     "scan:url": "node scripts/scans/scan-url.mjs",
     "build": "next build",
     "start": "next start",
@@ -39,6 +41,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
     "playwright": "^1.60.0",
     "tailwindcss": "^4",
     "typescript": "^5"

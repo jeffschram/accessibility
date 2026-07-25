@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronRight, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,12 +25,11 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export default function AuditPageDetailPage() {
-  const params = useParams<{ projectId: string; auditId: string; pageId: string }>();
-  const projectId = params.projectId as Id<"projects">;
-  const auditId = params.auditId as Id<"audits">;
+  const params = useParams<{ projectSlug: string; auditSlug: string; pageId: string }>();
+  const { projectSlug, auditSlug } = params;
   const pageId = params.pageId as Id<"auditPages">;
-  const project = useQuery(api.projects.get, { projectId });
-  const audit = useQuery(api.audits.get, { auditId });
+  const resolved = useQuery(api.audits.getBySlug, { projectSlug, auditSlug });
+  const auditId = resolved?.audit._id;
   const pageDetail = useQuery(api.inventory.getPageDetail, { pageId });
   const componentTypeOptions = useQuery(api.componentTypes.listActiveOptions);
   const createComponent = useMutation(api.inventory.createComponent);
@@ -50,7 +50,7 @@ export default function AuditPageDetailPage() {
     event.preventDefault();
     setError("");
 
-    if (!pageDetail?.page) {
+    if (!pageDetail?.page || !auditId) {
       setError("Page is not loaded.");
       return;
     }
@@ -109,8 +109,7 @@ export default function AuditPageDetailPage() {
   }
 
   if (
-    project === undefined ||
-    audit === undefined ||
+    resolved === undefined ||
     pageDetail === undefined ||
     componentTypeOptions === undefined
   ) {
@@ -123,14 +122,14 @@ export default function AuditPageDetailPage() {
     );
   }
 
-  if (project === null || audit === null || pageDetail === null) {
+  if (resolved === null || pageDetail === null) {
     return (
       <AppShell>
         <div className="space-y-4">
           <Breadcrumbs
             items={[
               { href: "/", label: "Home" },
-              { href: `/projects/${projectId}/audits/${auditId}`, label: "Audit" },
+              { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: "Audit" },
               { label: "Page not found" },
             ]}
           />
@@ -164,8 +163,8 @@ export default function AuditPageDetailPage() {
         <Breadcrumbs
           items={[
             { href: "/", label: "Home" },
-            { href: `/projects/${projectId}`, label: project.name },
-            { href: `/projects/${projectId}/audits/${auditId}`, label: audit.name },
+            { href: `/projects/${projectSlug}`, label: resolved.project.name },
+            { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: resolved.audit.name },
             { label: pageDetail.page.name },
           ]}
         />
@@ -345,7 +344,7 @@ export default function AuditPageDetailPage() {
                           <div className="flex justify-end gap-2">
                             <Button asChild size="sm" variant="secondary">
                               <Link
-                                href={`/projects/${projectId}/audits/${auditId}/components/${component._id}`}
+                                href={`/projects/${projectSlug}/audits/${auditSlug}/components/${component._id}`}
                               >
                                 Open
                                 <ArrowRight className="size-4" aria-hidden="true" />
@@ -393,44 +392,3 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Breadcrumbs({
-  items,
-}: {
-  items: Array<{
-    href?: string;
-    label: string;
-  }>;
-}) {
-  return (
-    <nav aria-label="Breadcrumb" className="text-sm">
-      <ol className="flex flex-wrap items-center gap-1 text-slate-600">
-        {items.map((item, index) => {
-          const isCurrent = index === items.length - 1;
-
-          return (
-            <li className="flex min-w-0 items-center gap-1" key={`${item.label}-${index}`}>
-              {index > 0 ? (
-                <ChevronRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-              ) : null}
-              {item.href && !isCurrent ? (
-                <Link
-                  className="truncate font-medium text-sky-700 hover:text-sky-900"
-                  href={item.href}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span
-                  aria-current={isCurrent ? "page" : undefined}
-                  className="truncate font-medium text-slate-950"
-                >
-                  {item.label}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}

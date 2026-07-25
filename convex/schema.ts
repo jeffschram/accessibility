@@ -55,6 +55,9 @@ export default defineSchema({
   audits: defineTable({
     projectId: v.id("projects"),
     name: v.string(),
+    // Optional so rows created before slugs existed stay valid; every new audit
+    // gets one, and lookups fall back to the ID for old links.
+    slug: v.optional(v.string()),
     status: auditStatus,
     wcagVersion: v.string(),
     conformanceLevel: v.union(v.literal("A"), v.literal("AA"), v.literal("AAA")),
@@ -65,7 +68,9 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     summary: v.optional(v.string()),
     updatedAt: v.number(),
-  }).index("by_project", ["projectId"]),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_slug", ["projectId", "slug"]),
 
   scopeItems: defineTable({
     auditId: v.id("audits"),
@@ -78,8 +83,25 @@ export default defineSchema({
     priority: severity,
     riskNotes: v.optional(v.string()),
     testStatus,
+    // Discovery provenance. All optional so rows created by hand — or before
+    // discovery existed — stay valid.
+    discoverySource: v.optional(
+      v.union(v.literal("manual"), v.literal("sitemap"), v.literal("crawl")),
+    ),
+    discoveryDepth: v.optional(v.number()),
+    /** Normalized URL, used to dedupe across discovery runs and sources. */
+    normalizedUrl: v.optional(v.string()),
+    /** Template cluster: routePattern, or a structural fingerprint when computed. */
+    clusterKey: v.optional(v.string()),
+    clusterSize: v.optional(v.number()),
+    /** Proposed as the sample page for its cluster (WCAG-EM style sampling). */
+    isRepresentative: v.optional(v.boolean()),
+    /** Set once promoted into the inventory, so promotion is idempotent. */
+    promotedPageId: v.optional(v.id("auditPages")),
     updatedAt: v.number(),
-  }).index("by_audit", ["auditId"]),
+  })
+    .index("by_audit", ["auditId"])
+    .index("by_audit_url", ["auditId", "normalizedUrl"]),
 
   auditPages: defineTable({
     auditId: v.id("audits"),
@@ -215,6 +237,9 @@ export default defineSchema({
   observations: defineTable({
     auditId: v.id("audits"),
     scopeItemId: v.optional(v.id("scopeItems")),
+    // The inventory flow records pages in auditPages, so scans link there.
+    pageId: v.optional(v.id("auditPages")),
+    url: v.optional(v.string()),
     testRunId: v.optional(v.id("testRuns")),
     source: v.union(
       v.literal("automated"),
@@ -236,9 +261,25 @@ export default defineSchema({
       v.literal("dismissed"),
       v.literal("converted_to_finding"),
     ),
+    // How much the producing tool or model trusts this observation. Automated
+    // and AI output stays advisory until a human converts it to a finding.
+    confidence: v.optional(
+      v.union(
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high"),
+        v.literal("needs_review"),
+      ),
+    ),
+    triageNote: v.optional(v.string()),
+    dismissReason: v.optional(v.string()),
+    // Producer-specific context: axe impact/tags, or model + prompt version.
+    metadata: v.optional(v.any()),
     evidenceIds: v.array(v.id("evidence")),
     updatedAt: v.number(),
-  }).index("by_audit", ["auditId"]),
+  })
+    .index("by_audit", ["auditId"])
+    .index("by_audit_status", ["auditId", "status"]),
 
   findings: defineTable({
     auditId: v.id("audits"),
@@ -257,6 +298,10 @@ export default defineSchema({
     priority: severity,
     wcagCriteria: v.array(v.string()),
     affectedScopeItemIds: v.array(v.id("scopeItems")),
+    affectedPageIds: v.optional(v.array(v.id("auditPages"))),
+    // Observations this finding was promoted or merged from, for traceability
+    // back to the evidence a human reviewed.
+    sourceObservationIds: v.optional(v.array(v.id("observations"))),
     userImpact: v.optional(v.string()),
     stepsToReproduce: v.optional(v.string()),
     actualResult: v.optional(v.string()),

@@ -13,13 +13,16 @@ import type * as componentTemplates from "../componentTemplates.js";
 import type * as componentTypes from "../componentTypes.js";
 import type * as dashboard from "../dashboard.js";
 import type * as defaultWcag from "../defaultWcag.js";
+import type * as evidence from "../evidence.js";
 import type * as findings from "../findings.js";
 import type * as guidance from "../guidance.js";
 import type * as inventory from "../inventory.js";
+import type * as observations from "../observations.js";
 import type * as projects from "../projects.js";
 import type * as scope from "../scope.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
+import type * as slugs from "../slugs.js";
 import type * as wcag from "../wcag.js";
 
 import type {
@@ -34,13 +37,16 @@ declare const fullApi: ApiFromModules<{
   componentTypes: typeof componentTypes;
   dashboard: typeof dashboard;
   defaultWcag: typeof defaultWcag;
+  evidence: typeof evidence;
   findings: typeof findings;
   guidance: typeof guidance;
   inventory: typeof inventory;
+  observations: typeof observations;
   projects: typeof projects;
   scope: typeof scope;
   seed: typeof seed;
   seedData: typeof seedData;
+  slugs: typeof slugs;
   wcag: typeof wcag;
 }>;
 

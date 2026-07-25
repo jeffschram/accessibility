@@ -115,6 +115,94 @@ export const createPage = mutation({
   },
 });
 
+/**
+ * Promotes reviewed scope items into the audit's page inventory.
+ *
+ * Idempotent: a scope item already promoted is skipped, and a page whose URL
+ * is already in the inventory is adopted rather than duplicated. Re-running
+ * after including a few more items adds only those.
+ */
+export const promoteScopeItems = mutation({
+  args: {
+    auditId: v.id("audits"),
+    scopeItemIds: v.optional(v.array(v.id("scopeItems"))),
+  },
+  handler: async (ctx, args) => {
+    const audit = await ctx.db.get(args.auditId);
+    if (!audit) {
+      throw new Error("Audit not found.");
+    }
+
+    const candidates = args.scopeItemIds
+      ? (
+          await Promise.all(args.scopeItemIds.map((id) => ctx.db.get(id)))
+        ).filter((item) => item !== null)
+      : (
+          await ctx.db
+            .query("scopeItems")
+            .withIndex("by_audit", (q) => q.eq("auditId", args.auditId))
+            .take(5000)
+        ).filter((item) => item.included);
+
+    const existingPages = await ctx.db
+      .query("auditPages")
+      .withIndex("by_audit", (q) => q.eq("auditId", args.auditId))
+      .take(5000);
+
+    const pagesByUrl = new Map(
+      existingPages.filter((page) => page.url).map((page) => [page.url, page._id]),
+    );
+
+    const now = Date.now();
+    let created = 0;
+    let adopted = 0;
+    let skipped = 0;
+
+    for (const item of candidates) {
+      if (item.auditId !== args.auditId) {
+        continue;
+      }
+
+      if (item.promotedPageId) {
+        // Still valid? A deleted page should not leave the item stranded.
+        const page = await ctx.db.get(item.promotedPageId);
+        if (page) {
+          skipped += 1;
+          continue;
+        }
+      }
+
+      const url = item.url ?? item.normalizedUrl;
+      const alreadyThere = url ? pagesByUrl.get(url) : undefined;
+
+      if (alreadyThere) {
+        await ctx.db.patch(item._id, { promotedPageId: alreadyThere, updatedAt: now });
+        adopted += 1;
+        continue;
+      }
+
+      const pageId = await ctx.db.insert("auditPages", {
+        auditId: args.auditId,
+        name: item.name,
+        url,
+        description: item.description,
+        priority: item.priority,
+        testStatus: "not_started",
+        updatedAt: now,
+      });
+
+      if (url) {
+        pagesByUrl.set(url, pageId);
+      }
+
+      await ctx.db.patch(item._id, { promotedPageId: pageId, updatedAt: now });
+      created += 1;
+    }
+
+    return { created, adopted, skipped, considered: candidates.length };
+  },
+});
+
 export const createComponent = mutation({
   args: {
     auditId: v.id("audits"),
