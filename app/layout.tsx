@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers";
+import { SITE_NAME } from "@/lib/metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// WCAG 2.4.2 wants a title describing each page's topic or purpose, so every
+// route sets its own via a layout; this is the dashboard's and the fallback.
 export const metadata: Metadata = {
-  title: "Accessibility Audit Tracker",
+  title: SITE_NAME,
   description:
     "Plan, run, track, and report accessibility audits with WCAG-guided workflows.",
 };
