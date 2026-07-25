@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { auditBySlugOrId, projectBySlugOrId, uniqueAuditSlug } from "./slugs";
 
 export const list = query({
   args: {},
@@ -26,6 +27,27 @@ export const get = query({
   },
 });
 
+/**
+ * Resolves the project and audit for a slug-based URL. Both segments accept a
+ * slug or a raw ID so links predating slugs keep working.
+ */
+export const getBySlug = query({
+  args: { projectSlug: v.string(), auditSlug: v.string() },
+  handler: async (ctx, args) => {
+    const project = await projectBySlugOrId(ctx, args.projectSlug);
+    if (!project) {
+      return null;
+    }
+
+    const audit = await auditBySlugOrId(ctx, project._id, args.auditSlug);
+    if (!audit) {
+      return null;
+    }
+
+    return { project, audit };
+  },
+});
+
 export const create = mutation({
   args: {
     projectId: v.id("projects"),
@@ -42,12 +64,40 @@ export const create = mutation({
       throw new Error("Project not found.");
     }
 
-    return await ctx.db.insert("audits", {
+    const slug = await uniqueAuditSlug(ctx, args.projectId, args.name);
+
+    const auditId = await ctx.db.insert("audits", {
       ...args,
+      slug,
       status: "scoping",
       startedAt: Date.now(),
       updatedAt: Date.now(),
     });
+
+    // The caller navigates to the new audit by slug, so hand back both.
+    return { auditId, slug };
+  },
+});
+
+/** One-shot backfill for audits created before slugs existed. */
+export const backfillSlugs = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const audits = await ctx.db.query("audits").take(500);
+    let updated = 0;
+
+    for (const audit of audits) {
+      if (audit.slug) {
+        continue;
+      }
+
+      await ctx.db.patch(audit._id, {
+        slug: await uniqueAuditSlug(ctx, audit.projectId, audit.name),
+      });
+      updated += 1;
+    }
+
+    return { scanned: audits.length, updated };
   },
 });
 

@@ -24,12 +24,11 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export default function AuditPageDetailPage() {
-  const params = useParams<{ projectId: string; auditId: string; pageId: string }>();
-  const projectId = params.projectId as Id<"projects">;
-  const auditId = params.auditId as Id<"audits">;
+  const params = useParams<{ projectSlug: string; auditSlug: string; pageId: string }>();
+  const { projectSlug, auditSlug } = params;
   const pageId = params.pageId as Id<"auditPages">;
-  const project = useQuery(api.projects.get, { projectId });
-  const audit = useQuery(api.audits.get, { auditId });
+  const resolved = useQuery(api.audits.getBySlug, { projectSlug, auditSlug });
+  const auditId = resolved?.audit._id;
   const pageDetail = useQuery(api.inventory.getPageDetail, { pageId });
   const componentTypeOptions = useQuery(api.componentTypes.listActiveOptions);
   const createComponent = useMutation(api.inventory.createComponent);
@@ -50,7 +49,7 @@ export default function AuditPageDetailPage() {
     event.preventDefault();
     setError("");
 
-    if (!pageDetail?.page) {
+    if (!pageDetail?.page || !auditId) {
       setError("Page is not loaded.");
       return;
     }
@@ -109,8 +108,7 @@ export default function AuditPageDetailPage() {
   }
 
   if (
-    project === undefined ||
-    audit === undefined ||
+    resolved === undefined ||
     pageDetail === undefined ||
     componentTypeOptions === undefined
   ) {
@@ -123,14 +121,14 @@ export default function AuditPageDetailPage() {
     );
   }
 
-  if (project === null || audit === null || pageDetail === null) {
+  if (resolved === null || pageDetail === null) {
     return (
       <AppShell>
         <div className="space-y-4">
           <Breadcrumbs
             items={[
               { href: "/", label: "Home" },
-              { href: `/projects/${projectId}/audits/${auditId}`, label: "Audit" },
+              { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: "Audit" },
               { label: "Page not found" },
             ]}
           />
@@ -164,8 +162,8 @@ export default function AuditPageDetailPage() {
         <Breadcrumbs
           items={[
             { href: "/", label: "Home" },
-            { href: `/projects/${projectId}`, label: project.name },
-            { href: `/projects/${projectId}/audits/${auditId}`, label: audit.name },
+            { href: `/projects/${projectSlug}`, label: resolved.project.name },
+            { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: resolved.audit.name },
             { label: pageDetail.page.name },
           ]}
         />
@@ -345,7 +343,7 @@ export default function AuditPageDetailPage() {
                           <div className="flex justify-end gap-2">
                             <Button asChild size="sm" variant="secondary">
                               <Link
-                                href={`/projects/${projectId}/audits/${auditId}/components/${component._id}`}
+                                href={`/projects/${projectSlug}/audits/${auditSlug}/components/${component._id}`}
                               >
                                 Open
                                 <ArrowRight className="size-4" aria-hidden="true" />

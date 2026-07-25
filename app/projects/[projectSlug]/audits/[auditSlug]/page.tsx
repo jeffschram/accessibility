@@ -21,17 +21,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 
 type Priority = "critical" | "high" | "medium" | "low";
 
 export default function AuditDetailPage() {
-  const params = useParams<{ projectId: string; auditId: string }>();
-  const projectId = params.projectId as Id<"projects">;
-  const auditId = params.auditId as Id<"audits">;
-  const project = useQuery(api.projects.get, { projectId });
-  const audit = useQuery(api.audits.get, { auditId });
-  const inventory = useQuery(api.inventory.getByAudit, { auditId });
+  const params = useParams<{ projectSlug: string; auditSlug: string }>();
+  const { projectSlug, auditSlug } = params;
+  const resolved = useQuery(api.audits.getBySlug, { projectSlug, auditSlug });
+  const auditId = resolved?.audit._id;
+  const inventory = useQuery(
+    api.inventory.getByAudit,
+    auditId ? { auditId } : "skip",
+  );
   const componentTypeOptions = useQuery(api.componentTypes.listActiveOptions);
   const createPage = useMutation(api.inventory.createPage);
   const createComponent = useMutation(api.inventory.createComponent);
@@ -59,6 +60,11 @@ export default function AuditDetailPage() {
     const trimmedName = pageName.trim();
     if (!trimmedName) {
       setError("Page name is required.");
+      return;
+    }
+
+    if (!auditId) {
+      setError("Audit is not loaded.");
       return;
     }
 
@@ -93,6 +99,11 @@ export default function AuditDetailPage() {
       return;
     }
 
+    if (!auditId) {
+      setGlobalError("Audit is not loaded.");
+      return;
+    }
+
     setIsGlobalSubmitting(true);
     try {
       await createComponent({
@@ -113,12 +124,7 @@ export default function AuditDetailPage() {
     }
   }
 
-  if (
-    project === undefined ||
-    audit === undefined ||
-    inventory === undefined ||
-    componentTypeOptions === undefined
-  ) {
+  if (resolved === undefined) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -128,12 +134,12 @@ export default function AuditDetailPage() {
     );
   }
 
-  if (project === null || audit === null) {
+  if (resolved === null) {
     return (
       <AppShell>
         <div className="space-y-4">
           <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}`}>
+            <Link href={`/projects/${projectSlug}`}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               Back to project
             </Link>
@@ -151,6 +157,17 @@ export default function AuditDetailPage() {
     );
   }
 
+  if (inventory === undefined || componentTypeOptions === undefined) {
+    return (
+      <AppShell>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Loading inventory...
+        </div>
+      </AppShell>
+    );
+  }
+
+  const { project, audit } = resolved;
   const globalComponents = inventory.components.filter(
     (component) => component.scope === "global",
   );
@@ -163,13 +180,13 @@ export default function AuditDetailPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}`}>
+            <Link href={`/projects/${projectSlug}`}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               Back to project
             </Link>
           </Button>
           <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}/triage`}>
+            <Link href={`/projects/${projectSlug}/audits/${auditSlug}/triage`}>
               <ClipboardCheck className="size-4" aria-hidden="true" />
               Triage queue
             </Link>
@@ -301,7 +318,7 @@ export default function AuditDetailPage() {
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
                           <Button asChild size="sm" variant="secondary">
-                            <Link href={`/projects/${projectId}/audits/${auditId}/components/${component._id}`}>
+                            <Link href={`/projects/${projectSlug}/audits/${auditSlug}/components/${component._id}`}>
                               Open
                               <ArrowRight className="size-4" aria-hidden="true" />
                             </Link>
@@ -457,7 +474,7 @@ export default function AuditDetailPage() {
                         <td className="px-4 py-4">
                           <div className="flex justify-end gap-2">
                             <Button asChild size="sm" variant="secondary">
-                              <Link href={`/projects/${projectId}/audits/${auditId}/pages/${page._id}`}>
+                              <Link href={`/projects/${projectSlug}/audits/${auditSlug}/pages/${page._id}`}>
                                 Open
                                 <ArrowRight className="size-4" aria-hidden="true" />
                               </Link>
@@ -533,7 +550,7 @@ export default function AuditDetailPage() {
                         <td className="px-4 py-4">
                           <div className="flex justify-end gap-2">
                             <Button asChild size="sm" variant="secondary">
-                              <Link href={`/projects/${projectId}/audits/${auditId}/components/${component._id}`}>
+                              <Link href={`/projects/${projectSlug}/audits/${auditSlug}/components/${component._id}`}>
                                 Open
                                 <ArrowRight className="size-4" aria-hidden="true" />
                               </Link>

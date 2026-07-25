@@ -55,6 +55,9 @@ export default defineSchema({
   audits: defineTable({
     projectId: v.id("projects"),
     name: v.string(),
+    // Optional so rows created before slugs existed stay valid; every new audit
+    // gets one, and lookups fall back to the ID for old links.
+    slug: v.optional(v.string()),
     status: auditStatus,
     wcagVersion: v.string(),
     conformanceLevel: v.union(v.literal("A"), v.literal("AA"), v.literal("AAA")),
@@ -65,7 +68,9 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     summary: v.optional(v.string()),
     updatedAt: v.number(),
-  }).index("by_project", ["projectId"]),
+  })
+    .index("by_project", ["projectId"])
+    .index("by_project_slug", ["projectId", "slug"]),
 
   scopeItems: defineTable({
     auditId: v.id("audits"),

@@ -22,6 +22,7 @@ import type * as projects from "../projects.js";
 import type * as scope from "../scope.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
+import type * as slugs from "../slugs.js";
 import type * as wcag from "../wcag.js";
 
 import type {
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   scope: typeof scope;
   seed: typeof seed;
   seedData: typeof seedData;
+  slugs: typeof slugs;
   wcag: typeof wcag;
 }>;
 

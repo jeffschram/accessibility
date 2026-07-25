@@ -67,6 +67,7 @@ export default function Home() {
                   <div className="divide-y divide-slate-200">
                     {sortedProjects.map((project) => {
                       const projectId = getItemId(project);
+                      const projectHref = `/projects/${getSlug(project) || projectId}`;
                       const projectAudits = liveAudits
                         .filter((audit) => getProjectId(audit) === projectId)
                         .sort(compareAudits);
@@ -97,7 +98,7 @@ export default function Home() {
                             </div>
                             <div className="flex justify-start md:justify-end">
                               <Button asChild size="sm" variant="secondary">
-                                <Link href={`/projects/${projectId}`}>Open project</Link>
+                                <Link href={projectHref}>Open project</Link>
                               </Button>
                             </div>
                           </div>
@@ -132,7 +133,9 @@ export default function Home() {
                                             (finding) => getAuditId(finding) === auditId,
                                           ).length;
                                     const progress = getProgress(audit);
-                                    const auditHref = getAuditHref(audit);
+                                    const auditHref = `${projectHref}/audits/${
+                                      getSlug(audit) || auditId
+                                    }`;
 
                                     return (
                                       <tr key={auditId} className="align-top">
@@ -167,9 +170,7 @@ export default function Home() {
                                         </td>
                                         <td className="px-4 py-4 text-right">
                                           <Button asChild size="sm" variant="secondary">
-                                            <Link href={auditHref ?? `/projects/${projectId}`}>
-                                              Open
-                                            </Link>
+                                            <Link href={auditHref}>Open</Link>
                                           </Button>
                                         </td>
                                       </tr>
@@ -433,11 +434,9 @@ function getProjectId(item: object | undefined) {
     : "";
 }
 
-function getAuditHref(audit: object | undefined) {
-  const auditId = getItemId(audit);
-  const projectId = getProjectId(audit);
-
-  return auditId && projectId ? `/projects/${projectId}/audits/${auditId}` : null;
+/** Sample-data rows have no slug, so callers fall back to the ID. */
+function getSlug(item: object | undefined) {
+  return item && "slug" in item && typeof item.slug === "string" ? item.slug : "";
 }
 
 function getProgress(audit: { progress?: number; status?: string } | undefined) {

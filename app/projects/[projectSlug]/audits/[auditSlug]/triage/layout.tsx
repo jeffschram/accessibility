@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { resolveTitle } from "@/lib/metadata";
 
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ auditId: string }>;
+  params: Promise<{ projectSlug: string; auditSlug: string }>;
 }): Promise<Metadata> {
-  const { auditId } = await params;
+  const { projectSlug, auditSlug } = await params;
 
   return resolveTitle(async (client) => {
-    const audit = await client.query(api.audits.get, { auditId: auditId as Id<"audits"> });
-    return audit ? `Triage queue — ${audit.name}` : null;
+    const result = await client.query(api.audits.getBySlug, { projectSlug, auditSlug });
+    return result ? `Triage queue — ${result.audit.name}` : null;
   }, "Triage queue");
 }
 

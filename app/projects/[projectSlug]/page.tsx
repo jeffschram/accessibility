@@ -25,11 +25,14 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export default function ProjectDetailPage() {
-  const params = useParams<{ projectId: string }>();
+  const params = useParams<{ projectSlug: string }>();
   const router = useRouter();
-  const projectId = params.projectId as Id<"projects">;
-  const project = useQuery(api.projects.get, { projectId });
-  const audits = useQuery(api.audits.listByProject, { projectId });
+  const projectSlug = params.projectSlug;
+  const project = useQuery(api.projects.getBySlug, { slug: projectSlug });
+  const audits = useQuery(
+    api.audits.listByProject,
+    project ? { projectId: project._id } : "skip",
+  );
   const createAudit = useMutation(api.audits.create);
   const deleteAudit = useMutation(api.audits.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -60,8 +63,8 @@ export default function ProjectDetailPage() {
 
     setIsSubmitting(true);
     try {
-      const auditId = await createAudit({
-        projectId,
+      const created = await createAudit({
+        projectId: project._id,
         name: trimmedName,
         wcagVersion: project.defaultWcagVersion,
         conformanceLevel: project.defaultConformanceLevel,
@@ -74,7 +77,7 @@ export default function ProjectDetailPage() {
       setEnvironmentUrl("");
       setSummary("");
       setDialogOpen(false);
-      router.push(`/projects/${projectId}/audits/${auditId}`);
+      router.push(`/projects/${project.slug}/audits/${created.slug}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not create audit.");
     } finally {
@@ -97,7 +100,7 @@ export default function ProjectDetailPage() {
     }
   }
 
-  if (project === undefined || audits === undefined) {
+  if (project === undefined) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -127,6 +130,16 @@ export default function ProjectDetailPage() {
               </p>
             </CardContent>
           </Card>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (audits === undefined) {
+    return (
+      <AppShell>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Loading audits...
         </div>
       </AppShell>
     );
@@ -281,7 +294,7 @@ export default function ProjectDetailPage() {
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
                           <Button asChild size="sm" variant="secondary">
-                            <Link href={`/projects/${projectId}/audits/${audit._id}`}>
+                            <Link href={`/projects/${project.slug}/audits/${audit.slug ?? audit._id}`}>
                               Open audit
                             </Link>
                           </Button>

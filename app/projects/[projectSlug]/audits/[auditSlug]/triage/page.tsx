@@ -53,22 +53,29 @@ const sourceLabels: Record<ObservationSource, string> = {
 };
 
 export default function TriageQueuePage() {
-  const params = useParams<{ projectId: string; auditId: string }>();
-  const projectId = params.projectId as Id<"projects">;
-  const auditId = params.auditId as Id<"audits">;
+  const params = useParams<{ projectSlug: string; auditSlug: string }>();
+  const { projectSlug, auditSlug } = params;
 
   const [status, setStatus] = useState<ObservationStatus | "all">("new");
   const [source, setSource] = useState<ObservationSource | "all">("all");
   const [rawRuleId, setRawRuleId] = useState("all");
 
-  const audit = useQuery(api.audits.get, { auditId });
-  const summary = useQuery(api.observations.getCounts, { auditId });
-  const observations = useQuery(api.observations.listByAudit, {
-    auditId,
-    status: status === "all" ? undefined : status,
-    source: source === "all" ? undefined : source,
-    rawRuleId: rawRuleId === "all" ? undefined : rawRuleId,
-  });
+  const resolved = useQuery(api.audits.getBySlug, { projectSlug, auditSlug });
+  const audit = resolved?.audit;
+  const auditId = audit?._id;
+
+  const summary = useQuery(api.observations.getCounts, auditId ? { auditId } : "skip");
+  const observations = useQuery(
+    api.observations.listByAudit,
+    auditId
+      ? {
+          auditId,
+          status: status === "all" ? undefined : status,
+          source: source === "all" ? undefined : source,
+          rawRuleId: rawRuleId === "all" ? undefined : rawRuleId,
+        }
+      : "skip",
+  );
 
   const triage = useMutation(api.observations.triage);
   const reopen = useMutation(api.observations.reopen);
@@ -76,7 +83,7 @@ export default function TriageQueuePage() {
   const [dismissTarget, setDismissTarget] = useState<Id<"observations"> | null>(null);
   const [convertTarget, setConvertTarget] = useState<Id<"observations"> | null>(null);
 
-  if (audit === undefined || summary === undefined || observations === undefined) {
+  if (resolved === undefined) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -86,12 +93,12 @@ export default function TriageQueuePage() {
     );
   }
 
-  if (audit === null) {
+  if (resolved === null) {
     return (
       <AppShell>
         <div className="space-y-4">
           <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}`}>
+            <Link href={`/projects/${projectSlug}`}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               Back to project
             </Link>
@@ -109,12 +116,22 @@ export default function TriageQueuePage() {
     );
   }
 
+  if (summary === undefined || observations === undefined) {
+    return (
+      <AppShell>
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Loading observations...
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="space-y-6">
         <div>
           <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}`}>
+            <Link href={`/projects/${projectSlug}/audits/${auditSlug}`}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               Back to audit
             </Link>
@@ -122,7 +139,7 @@ export default function TriageQueuePage() {
         </div>
 
         <header className="border-b border-slate-200 pb-6">
-          <p className="text-sm font-medium text-sky-700">{audit.name}</p>
+          <p className="text-sm font-medium text-sky-700">{resolved.audit.name}</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
             Triage queue
           </h1>
