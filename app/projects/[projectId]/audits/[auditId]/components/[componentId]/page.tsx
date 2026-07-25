@@ -68,10 +68,6 @@ export default function ComponentDetailPage() {
   const checks = [...componentDetail.checks].sort(
     (first, second) => first.order - second.order,
   );
-  const usedPages = componentDetail.instances.flatMap((instance) => {
-    const page = componentDetail.pages.find((candidate) => candidate._id === instance.pageId);
-    return page ? [{ instance, page }] : [];
-  });
 
   return (
     <AppShell>
@@ -94,67 +90,14 @@ export default function ComponentDetailPage() {
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
             {component.description ||
-              "Review this component pattern, the pages where it appears, and its audit checks."}
+              "Review this component pattern and its audit checks."}
           </p>
         </header>
 
-        <section aria-label="Component summary" className="grid gap-3 md:grid-cols-4">
+        <section aria-label="Component summary" className="grid gap-3 md:grid-cols-3">
           <SummaryCard label="Type" value={component.componentType.replace("_", " ")} />
           <SummaryCard label="Scope" value={component.scope.replace("_", " ")} />
           <SummaryCard label="Status" value={component.testStatus.replaceAll("_", " ")} />
-          <SummaryCard label="Used on pages" value={usedPages.length.toString()} />
-        </section>
-
-        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-950">Used On Pages</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Page instances where this component has been identified.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Page</th>
-                  <th className="px-4 py-3 font-semibold">Route or URL</th>
-                  <th className="px-4 py-3 font-semibold">Instance status</th>
-                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {usedPages.length ? (
-                  usedPages.map(({ instance, page }) => (
-                    <tr key={instance._id} className="align-top">
-                      <td className="px-4 py-4">
-                        <div className="font-medium text-slate-950">{page.name}</div>
-                        {instance.notes ? (
-                          <div className="mt-1 text-slate-600">{instance.notes}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-4">{page.url || "No URL set"}</td>
-                      <td className="px-4 py-4">
-                        <Badge>{instance.instanceStatus.replaceAll("_", " ")}</Badge>
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <Button asChild size="sm" variant="secondary">
-                          <Link href={`/projects/${projectId}/audits/${auditId}/pages/${page._id}`}>
-                            Open page
-                          </Link>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-slate-600" colSpan={4}>
-                      This component is not attached to any pages yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </section>
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">

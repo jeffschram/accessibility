@@ -112,9 +112,9 @@ export default function ProjectDetailPage() {
       <AppShell>
         <div className="space-y-4">
           <Button asChild variant="secondary">
-            <Link href="/projects">
+            <Link href="/">
               <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to projects
+              Back to home
             </Link>
           </Button>
           <Card>
@@ -139,9 +139,9 @@ export default function ProjectDetailPage() {
       <div className="space-y-6">
         <div>
           <Button asChild variant="secondary">
-            <Link href="/projects">
+            <Link href="/">
               <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to projects
+              Back to home
             </Link>
           </Button>
         </div>

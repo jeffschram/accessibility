@@ -32,17 +32,25 @@ export default function AuditDetailPage() {
   const project = useQuery(api.projects.get, { projectId });
   const audit = useQuery(api.audits.get, { auditId });
   const inventory = useQuery(api.inventory.getByAudit, { auditId });
+  const componentTypeOptions = useQuery(api.componentTypes.listActiveOptions);
   const createPage = useMutation(api.inventory.createPage);
+  const createComponent = useMutation(api.inventory.createComponent);
   const deletePage = useMutation(api.inventory.removePage);
   const deleteComponent = useMutation(api.inventory.removeComponent);
 
   const [pageDialogOpen, setPageDialogOpen] = useState(false);
+  const [globalDialogOpen, setGlobalDialogOpen] = useState(false);
   const [pageName, setPageName] = useState("");
   const [pageUrl, setPageUrl] = useState("");
   const [pageDescription, setPageDescription] = useState("");
   const [pagePriority, setPagePriority] = useState<Priority>("medium");
+  const [globalComponentName, setGlobalComponentName] = useState("");
+  const [globalComponentType, setGlobalComponentType] = useState("navigation");
+  const [globalComponentDescription, setGlobalComponentDescription] = useState("");
   const [error, setError] = useState("");
+  const [globalError, setGlobalError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGlobalSubmitting, setIsGlobalSubmitting] = useState(false);
 
   async function handleCreatePage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,7 +83,42 @@ export default function AuditDetailPage() {
     }
   }
 
-  if (project === undefined || audit === undefined || inventory === undefined) {
+  async function handleCreateGlobalComponent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setGlobalError("");
+
+    const trimmedName = globalComponentName.trim();
+    if (!trimmedName) {
+      setGlobalError("Component name is required.");
+      return;
+    }
+
+    setIsGlobalSubmitting(true);
+    try {
+      await createComponent({
+        auditId,
+        name: trimmedName,
+        componentType: globalComponentType,
+        scope: "global",
+        description: globalComponentDescription.trim() || undefined,
+      });
+      setGlobalComponentName("");
+      setGlobalComponentType("navigation");
+      setGlobalComponentDescription("");
+      setGlobalDialogOpen(false);
+    } catch (caught) {
+      setGlobalError(caught instanceof Error ? caught.message : "Could not create global component.");
+    } finally {
+      setIsGlobalSubmitting(false);
+    }
+  }
+
+  if (
+    project === undefined ||
+    audit === undefined ||
+    inventory === undefined ||
+    componentTypeOptions === undefined
+  ) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -108,6 +151,13 @@ export default function AuditDetailPage() {
     );
   }
 
+  const globalComponents = inventory.components.filter(
+    (component) => component.scope === "global",
+  );
+  const pageComponents = inventory.components.filter(
+    (component) => component.scope !== "global",
+  );
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -127,15 +177,152 @@ export default function AuditDetailPage() {
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
             {audit.summary ||
-              "Define the pages in scope first. Open a page to manage the components used on that page."}
+              "Define global components, pages, and page-level components for this audit."}
           </p>
         </header>
 
-        <section aria-label="Audit summary" className="grid gap-3 md:grid-cols-4">
+        <section aria-label="Audit summary" className="grid gap-3 md:grid-cols-5">
           <SummaryCard label="Status" value={audit.status} />
           <SummaryCard label="Target" value={`WCAG ${audit.wcagVersion} ${audit.conformanceLevel}`} />
+          <SummaryCard label="Global components" value={globalComponents.length.toString()} />
           <SummaryCard label="Pages" value={inventory.pages.length.toString()} />
-          <SummaryCard label="Components" value={inventory.components.length.toString()} />
+          <SummaryCard label="Page components" value={pageComponents.length.toString()} />
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">Global Components</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Site-wide shell components such as navigation, footer, skip links, and global alerts.
+              </p>
+            </div>
+            <Dialog open={globalDialogOpen} onOpenChange={setGlobalDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="size-4" aria-hidden="true" />
+                  Add global component
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add global component</DialogTitle>
+                  <DialogDescription>
+                    Create a site-wide component that should be audited once for the whole site or application.
+                  </DialogDescription>
+                </DialogHeader>
+                <form className="space-y-4" onSubmit={handleCreateGlobalComponent}>
+                  <div className="space-y-2">
+                    <Label htmlFor="global-component-name">Component name</Label>
+                    <Input
+                      id="global-component-name"
+                      onChange={(event) => setGlobalComponentName(event.target.value)}
+                      placeholder="Example: Main navigation"
+                      value={globalComponentName}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="global-component-type">Type</Label>
+                    <select
+                      className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
+                      id="global-component-type"
+                      onChange={(event) => setGlobalComponentType(event.target.value)}
+                      value={globalComponentType}
+                    >
+                      {componentTypeOptions.map((type) => (
+                        <option key={type.key} value={type.key}>
+                          {type.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="global-component-description">Description</Label>
+                    <Textarea
+                      id="global-component-description"
+                      onChange={(event) => setGlobalComponentDescription(event.target.value)}
+                      placeholder="Where it appears or what behavior should be audited."
+                      value={globalComponentDescription}
+                    />
+                  </div>
+                  {globalError ? (
+                    <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {globalError}
+                    </p>
+                  ) : null}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      disabled={isGlobalSubmitting}
+                      onClick={() => setGlobalDialogOpen(false)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Cancel
+                    </Button>
+                    <Button disabled={isGlobalSubmitting} type="submit">
+                      {isGlobalSubmitting ? "Adding..." : "Add global component"}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Component</th>
+                  <th className="px-4 py-3 font-semibold">Type</th>
+                  <th className="px-4 py-3 font-semibold">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {globalComponents.length ? (
+                  globalComponents.map((component) => (
+                    <tr key={component._id} className="align-top">
+                      <td className="px-4 py-4">
+                        <div className="font-medium text-slate-950">{component.name}</div>
+                        {component.description ? (
+                          <div className="mt-1 text-slate-600">{component.description}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-4">{component.componentType}</td>
+                      <td className="px-4 py-4">
+                        <Badge>{component.testStatus.replaceAll("_", " ")}</Badge>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <Button asChild size="sm" variant="secondary">
+                            <Link href={`/projects/${projectId}/audits/${auditId}/components/${component._id}`}>
+                              Open
+                              <ArrowRight className="size-4" aria-hidden="true" />
+                            </Link>
+                          </Button>
+                          <Button
+                            aria-label={`Delete ${component.name}`}
+                            onClick={() => void deleteComponent({ componentId: component._id })}
+                            size="icon"
+                            type="button"
+                            variant="danger"
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-slate-600" colSpan={4}>
+                      No global components yet. Add site-wide components like navigation, footer, skip links, or global alerts.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -298,9 +485,9 @@ export default function AuditDetailPage() {
 
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-950">Components</h2>
+            <h2 className="text-base font-semibold text-slate-950">Page Components</h2>
             <p className="mt-1 text-sm text-slate-600">
-              All components currently identified across the pages in this audit.
+              Components currently identified on pages in this audit.
             </p>
           </div>
 
@@ -317,8 +504,8 @@ export default function AuditDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {inventory.components.length ? (
-                  inventory.components.map((component) => {
+                {pageComponents.length ? (
+                  pageComponents.map((component) => {
                     const usageCount = inventory.instances.filter(
                       (instance) => instance.componentId === component._id,
                     ).length;

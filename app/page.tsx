@@ -1,13 +1,5 @@
 "use client";
 
-import {
-  ArrowRight,
-  BookOpenCheck,
-  CheckCircle2,
-  ClipboardCheck,
-  ListChecks,
-  TriangleAlert,
-} from "lucide-react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
@@ -18,19 +10,9 @@ import { api } from "@/convex/_generated/api";
 import {
   audits,
   findings,
-  guidanceTasks,
   projects,
   scopeItems,
-  wcagCriteria,
 } from "@/lib/accessibility/sample-data";
-import type { Severity } from "@/lib/accessibility/types";
-
-const severityVariant: Record<Severity, "critical" | "high" | "medium" | "low"> = {
-  critical: "critical",
-  high: "high",
-  medium: "medium",
-  low: "low",
-};
 
 export default function Home() {
   const dashboard = useQuery(api.dashboard.summary);
@@ -38,23 +20,12 @@ export default function Home() {
   const liveAudits = dashboard?.audits ?? audits;
   const liveFindings = dashboard?.findings ?? findings;
   const liveScopeItems = dashboard?.scopeItems ?? scopeItems;
-  const liveGuidanceTasks = dashboard?.guidanceTasks ?? guidanceTasks;
-  const liveWcagCriteria = dashboard?.wcagCriteria ?? wcagCriteria;
-  const activeAudit = liveAudits[0];
-  const keyboardTask = liveGuidanceTasks[0];
-  const activeAuditId = getItemId(activeAudit);
-  const activeAuditScopeCount = liveScopeItems.filter(
-    (item) => getAuditId(item) === activeAuditId,
-  ).length;
-  const activeAuditFindingCount = liveFindings.filter(
-    (finding) => getAuditId(finding) === activeAuditId,
-  ).length;
-  const auditProgress = getProgress(activeAudit);
+  const sortedProjects = [...liveProjects].sort(compareByUpdatedAt);
 
   return (
     <AppShell>
       <div className="space-y-6">
-        <section className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-end">
+        <section className="border-b border-slate-200 pb-6">
           <div className="max-w-3xl">
             <p className="text-sm font-medium text-sky-700">WCAG-guided audit workspace</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
@@ -65,254 +36,158 @@ export default function Home() {
               while keeping WCAG references and evidence close to the workflow.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild>
-              <Link href="/testing">
-                Continue testing
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
-            <Button asChild variant="secondary">
-              <Link href="/reference">Open reference</Link>
-            </Button>
-          </div>
         </section>
 
-        <section aria-label="Audit summary" className="grid gap-3 md:grid-cols-4">
-          <MetricCard label="Active projects" value={liveProjects.length.toString()} />
-          <MetricCard label="Audit progress" value={`${auditProgress}%`} />
-          <MetricCard label="Scope items" value={activeAuditScopeCount.toString()} />
-          <MetricCard label="Open findings" value={activeAuditFindingCount.toString()} />
-        </section>
-
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
-          <Card className="min-w-0">
-            <CardHeader className="flex flex-row items-start justify-between gap-4">
-              <div>
-                <CardTitle>Active Audits</CardTitle>
-                <p className="mt-1 text-sm text-slate-600">
-                  Progress is tracked across scope, modalities, observations, and findings.
-                </p>
-              </div>
-              <Badge variant="info">WCAG 2.2 AA</Badge>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-md border border-slate-200">
-                <table className="min-w-[680px] w-full text-left text-sm">
-                  <thead className="bg-slate-100 text-xs uppercase text-slate-600">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Audit</th>
-                      <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="px-4 py-3 font-semibold">Scope</th>
-                      <th className="px-4 py-3 font-semibold">Findings</th>
-                      <th className="px-4 py-3 font-semibold">Progress</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {liveAudits.map((audit) => {
-                      const auditId = getItemId(audit);
-                      const auditScopeCount =
-                        "scopeCount" in audit
-                          ? audit.scopeCount
-                          : liveScopeItems.filter(
-                              (item) => getAuditId(item) === auditId,
-                            ).length;
-                      const auditFindingCount =
-                        "findingCount" in audit
-                          ? audit.findingCount
-                          : liveFindings.filter(
-                              (finding) => getAuditId(finding) === auditId,
-                            ).length;
-                      const progress = getProgress(audit);
-
-                      return (
-                      <tr key={auditId}>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-950">{audit.name}</div>
-                          <div className="text-xs text-slate-500">{audit.environmentUrl}</div>
-                        </td>
-                        <td className="px-4 py-3 capitalize">{audit.status}</td>
-                        <td className="px-4 py-3">{auditScopeCount}</td>
-                        <td className="px-4 py-3">{auditFindingCount}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
-                              <div
-                                className="h-full bg-sky-600"
-                                style={{ width: `${progress}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-slate-600">{progress}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-
+        <section>
           <Card className="min-w-0">
             <CardHeader>
-              <CardTitle>Guided Keyboard Task</CardTitle>
+              <CardTitle>Projects</CardTitle>
               <p className="mt-1 text-sm text-slate-600">
-                Checklist work includes instructions, expected behavior, and WCAG
-                references.
+                Projects are listed with current and recent audits nested underneath.
               </p>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-700">
-                    <ListChecks className="size-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-semibold text-slate-950">{keyboardTask.title}</h2>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">
-                      {keyboardTask.whyThisMatters}
-                    </p>
+            <CardContent>
+              <div className="overflow-hidden rounded-md border border-slate-200">
+                {sortedProjects.length ? (
+                  <div className="divide-y divide-slate-200">
+                    {sortedProjects.map((project) => {
+                      const projectId = getItemId(project);
+                      const projectAudits = liveAudits
+                        .filter((audit) => getProjectId(audit) === projectId)
+                        .sort(compareAudits);
+
+                      return (
+                        <section key={projectId} className="bg-white">
+                          <div className="grid gap-4 border-b border-slate-200 bg-slate-50 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="text-base font-semibold text-slate-950">
+                                  {project.name}
+                                </h2>
+                                <Badge variant="info">{getProjectTarget(project)}</Badge>
+                              </div>
+                              <p className="mt-1 text-sm text-slate-600">
+                                {getProjectClient(project) || "No client set"}
+                              </p>
+                              <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
+                                <div>
+                                  <dt className="inline font-medium text-slate-950">Audits: </dt>
+                                  <dd className="inline">{projectAudits.length}</dd>
+                                </div>
+                                <div>
+                                  <dt className="inline font-medium text-slate-950">Updated: </dt>
+                                  <dd className="inline">{formatUpdatedAt(project)}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                            <div className="flex justify-start md:justify-end">
+                              <Button asChild size="sm" variant="secondary">
+                                <Link href={`/projects/${projectId}`}>Open project</Link>
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full min-w-[820px] text-left text-sm">
+                              <thead className="bg-white text-xs uppercase text-slate-600">
+                                <tr>
+                                  <th className="px-4 py-3 font-semibold">Audit</th>
+                                  <th className="px-4 py-3 font-semibold">Status</th>
+                                  <th className="px-4 py-3 font-semibold">Target</th>
+                                  <th className="px-4 py-3 font-semibold">Scope</th>
+                                  <th className="px-4 py-3 font-semibold">Findings</th>
+                                  <th className="px-4 py-3 font-semibold">Progress</th>
+                                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200">
+                                {projectAudits.length ? (
+                                  projectAudits.map((audit) => {
+                                    const auditId = getItemId(audit);
+                                    const auditScopeCount =
+                                      "scopeCount" in audit
+                                        ? audit.scopeCount
+                                        : liveScopeItems.filter(
+                                            (item) => getAuditId(item) === auditId,
+                                          ).length;
+                                    const auditFindingCount =
+                                      "findingCount" in audit
+                                        ? audit.findingCount
+                                        : liveFindings.filter(
+                                            (finding) => getAuditId(finding) === auditId,
+                                          ).length;
+                                    const progress = getProgress(audit);
+                                    const auditHref = getAuditHref(audit);
+
+                                    return (
+                                      <tr key={auditId} className="align-top">
+                                        <td className="px-4 py-4">
+                                          <div className="font-medium text-slate-950">
+                                            {audit.name}
+                                          </div>
+                                          <div className="mt-1 text-slate-600">
+                                            {audit.environmentUrl}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4 capitalize">
+                                          <Badge>{audit.status}</Badge>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                          <Badge variant="info">{getAuditTarget(audit)}</Badge>
+                                        </td>
+                                        <td className="px-4 py-4">{auditScopeCount}</td>
+                                        <td className="px-4 py-4">{auditFindingCount}</td>
+                                        <td className="px-4 py-4">
+                                          <div className="flex items-center gap-3">
+                                            <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
+                                              <div
+                                                className="h-full bg-sky-600"
+                                                style={{ width: `${progress}%` }}
+                                              />
+                                            </div>
+                                            <span className="text-xs text-slate-600">
+                                              {progress}%
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4 text-right">
+                                          <Button asChild size="sm" variant="secondary">
+                                            <Link href={auditHref ?? `/projects/${projectId}`}>
+                                              Open
+                                            </Link>
+                                          </Button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                ) : (
+                                  <tr>
+                                    <td
+                                      className="px-4 py-8 text-center text-slate-600"
+                                      colSpan={7}
+                                    >
+                                      No audits yet.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                      );
+                    })}
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-white px-4 py-10 text-center text-sm text-slate-600">
+                    No projects yet.
+                  </div>
+                )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {getTaskWcag(keyboardTask).map((criterion) => (
-                  <Badge key={criterion} variant="info">
-                    {criterion}
-                  </Badge>
-                ))}
-              </div>
-              <ol className="space-y-2 text-sm leading-6 text-slate-700">
-                {keyboardTask.howToTest.map((step) => (
-                  <li key={step} className="flex gap-2">
-                    <CheckCircle2 className="mt-1 size-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700">
-                <strong className="font-semibold text-slate-950">Expected: </strong>
-                {keyboardTask.expectedBehavior}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-3">
-          <Card>
-            <CardHeader>
-              <CardTitle>Scope Coverage</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {liveScopeItems.map((item) => {
-                  const itemId = getItemId(item);
-                  const itemStatus = getScopeStatus(item);
-
-                  return (
-                  <li key={itemId} className="flex items-center justify-between gap-3 text-sm">
-                    <div>
-                      <div className="font-medium text-slate-950">{item.name}</div>
-                      <div className="text-xs capitalize text-slate-500">{item.type}</div>
-                    </div>
-                    <Badge>{itemStatus.replaceAll("_", " ")}</Badge>
-                  </li>
-                  );
-                })}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Findings Needing Attention</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {liveFindings.map((finding) => {
-                  const findingId = getItemId(finding);
-                  const findingWcag = "wcagCriteria" in finding ? finding.wcagCriteria : finding.wcag;
-
-                  return (
-                  <li key={findingId} className="space-y-2 border-b border-slate-100 pb-3 last:border-0 last:pb-0">
-                    <div className="flex items-start gap-2">
-                      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-slate-500" aria-hidden="true" />
-                      <p className="text-sm font-medium leading-5 text-slate-950">{finding.title}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant={severityVariant[finding.severity]}>{finding.severity}</Badge>
-                      {findingWcag.map((criterion) => (
-                        <Badge key={criterion} variant="info">
-                          {criterion}
-                        </Badge>
-                      ))}
-                    </div>
-                  </li>
-                  );
-                })}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Reference Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-3">
-                {liveWcagCriteria.slice(0, 4).map((criterion) => {
-                  const criterionId = getItemId(criterion);
-                  const criterionNumber =
-                    "criterion" in criterion ? criterion.criterion : criterion.id;
-
-                  return (
-                  <li key={criterionId} className="rounded-md border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-sm font-semibold text-slate-950">
-                        {criterionNumber}
-                      </span>
-                      <Badge>{criterion.level}</Badge>
-                    </div>
-                    <h3 className="mt-2 text-sm font-semibold text-slate-950">
-                      {criterion.title}
-                    </h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-600">
-                      {criterion.plainLanguageSummary}
-                    </p>
-                  </li>
-                  );
-                })}
-              </ul>
-              <Button asChild variant="secondary" className="mt-4 w-full">
-                <Link href="/reference">
-                  <BookOpenCheck className="size-4" aria-hidden="true" />
-                  Browse WCAG reference
-                </Link>
-              </Button>
             </CardContent>
           </Card>
         </section>
       </div>
     </AppShell>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-md bg-slate-100 text-slate-700">
-            <ClipboardCheck className="size-4" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-sm text-slate-600">{label}</p>
-            <p className="text-2xl font-semibold text-slate-950">{value}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -336,6 +211,19 @@ function getAuditId(item: object) {
   return "auditId" in item && typeof item.auditId === "string" ? item.auditId : "";
 }
 
+function getProjectId(item: object | undefined) {
+  return item && "projectId" in item && typeof item.projectId === "string"
+    ? item.projectId
+    : "";
+}
+
+function getAuditHref(audit: object | undefined) {
+  const auditId = getItemId(audit);
+  const projectId = getProjectId(audit);
+
+  return auditId && projectId ? `/projects/${projectId}/audits/${auditId}` : null;
+}
+
 function getProgress(audit: { progress?: number; status?: string } | undefined) {
   if (!audit) {
     return 0;
@@ -348,10 +236,109 @@ function getProgress(audit: { progress?: number; status?: string } | undefined) 
   return audit.status === "testing" ? 42 : 14;
 }
 
-function getScopeStatus(item: { status?: string; testStatus?: string }) {
-  return item.status ?? item.testStatus ?? "not_started";
+function getProjectClient(project: object) {
+  return "clientName" in project && typeof project.clientName === "string"
+    ? project.clientName
+    : "";
 }
 
-function getTaskWcag(task: { relatedWcag?: string[]; relatedWcagCriteria?: string[] }) {
-  return task.relatedWcag ?? task.relatedWcagCriteria ?? [];
+function getProjectTarget(project: object) {
+  if ("conformanceTarget" in project && typeof project.conformanceTarget === "string") {
+    return project.conformanceTarget;
+  }
+
+  const version =
+    "defaultWcagVersion" in project && typeof project.defaultWcagVersion === "string"
+      ? project.defaultWcagVersion
+      : "2.2";
+  const level =
+    "defaultConformanceLevel" in project &&
+    typeof project.defaultConformanceLevel === "string"
+      ? project.defaultConformanceLevel
+      : "AA";
+
+  return `WCAG ${version} ${level}`;
+}
+
+function getAuditTarget(audit: object) {
+  const version =
+    "wcagVersion" in audit && typeof audit.wcagVersion === "string"
+      ? audit.wcagVersion
+      : "2.2";
+  const level =
+    "conformanceLevel" in audit && typeof audit.conformanceLevel === "string"
+      ? audit.conformanceLevel
+      : "AA";
+
+  return `WCAG ${version} ${level}`;
+}
+
+function getUpdatedAt(item: object) {
+  if ("updatedAt" in item && typeof item.updatedAt === "number") {
+    return item.updatedAt;
+  }
+
+  if ("updatedAt" in item && typeof item.updatedAt === "string") {
+    if (item.updatedAt.toLowerCase() === "today") {
+      return 2;
+    }
+
+    if (item.updatedAt.toLowerCase() === "yesterday") {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+function formatUpdatedAt(item: object) {
+  if ("updatedAt" in item && typeof item.updatedAt === "number") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(item.updatedAt);
+  }
+
+  if ("updatedAt" in item && typeof item.updatedAt === "string") {
+    return item.updatedAt;
+  }
+
+  return "Not tracked";
+}
+
+function compareByUpdatedAt(first: object, second: object) {
+  return getUpdatedAt(second) - getUpdatedAt(first);
+}
+
+function compareAudits(first: object, second: object) {
+  const statusDifference = getStatusRank(first) - getStatusRank(second);
+
+  if (statusDifference !== 0) {
+    return statusDifference;
+  }
+
+  return compareByUpdatedAt(first, second);
+}
+
+function getStatusRank(item: object) {
+  const status = "status" in item && typeof item.status === "string" ? item.status : "";
+  const currentStatuses = new Set([
+    "scoping",
+    "testing",
+    "reporting",
+    "remediation",
+    "retesting",
+    "draft",
+  ]);
+
+  if (currentStatuses.has(status)) {
+    return 0;
+  }
+
+  if (status === "complete") {
+    return 1;
+  }
+
+  return 2;
 }

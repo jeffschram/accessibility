@@ -10,7 +10,9 @@
 
 import type * as audits from "../audits.js";
 import type * as componentTemplates from "../componentTemplates.js";
+import type * as componentTypes from "../componentTypes.js";
 import type * as dashboard from "../dashboard.js";
+import type * as defaultWcag from "../defaultWcag.js";
 import type * as findings from "../findings.js";
 import type * as guidance from "../guidance.js";
 import type * as inventory from "../inventory.js";
@@ -29,7 +31,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   audits: typeof audits;
   componentTemplates: typeof componentTemplates;
+  componentTypes: typeof componentTypes;
   dashboard: typeof dashboard;
+  defaultWcag: typeof defaultWcag;
   findings: typeof findings;
   guidance: typeof guidance;
   inventory: typeof inventory;

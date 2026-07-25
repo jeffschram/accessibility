@@ -140,6 +140,41 @@ export default defineSchema({
     .index("by_audit", ["auditId"])
     .index("by_component", ["componentId"]),
 
+  componentTypes: defineTable({
+    key: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    exampleUrls: v.array(v.string()),
+    archivedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  componentCheckTemplates: defineTable({
+    componentTypeId: v.id("componentTypes"),
+    key: v.string(),
+    title: v.string(),
+    instructions: v.string(),
+    expectedBehavior: v.string(),
+    wcagCriteria: v.array(v.string()),
+    order: v.number(),
+    archivedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_component_type", ["componentTypeId"]),
+
+  componentTypeWcagMappings: defineTable({
+    componentTypeId: v.id("componentTypes"),
+    wcagCriterionId: v.id("wcagCriteria"),
+    relevance: v.union(
+      v.literal("required"),
+      v.literal("common"),
+      v.literal("conditional"),
+    ),
+    notes: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_component_type", ["componentTypeId"])
+    .index("by_wcag", ["wcagCriterionId"]),
+
   testMatrixEntries: defineTable({
     auditId: v.id("audits"),
     modality,

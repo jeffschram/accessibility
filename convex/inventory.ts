@@ -324,7 +324,29 @@ async function createChecksForComponent(
     componentType: string;
   },
 ) {
-  const checks = getComponentChecks(args.componentType);
+  const libraryType = await ctx.db
+    .query("componentTypes")
+    .withIndex("by_key", (q) => q.eq("key", args.componentType))
+    .first();
+  const libraryChecks = libraryType
+    ? await ctx.db
+        .query("componentCheckTemplates")
+        .withIndex("by_component_type", (q) => q.eq("componentTypeId", libraryType._id))
+        .take(200)
+    : [];
+  const checks = libraryChecks.length
+    ? libraryChecks
+        .filter((check) => check.archivedAt === undefined)
+        .sort((first, second) => first.order - second.order)
+        .map((check) => ({
+          key: check.key,
+          title: check.title,
+          instructions: check.instructions,
+          expectedBehavior: check.expectedBehavior,
+          wcagCriteria: check.wcagCriteria,
+        }))
+    : getComponentChecks(args.componentType);
+
   for (const [index, check] of checks.entries()) {
     await ctx.db.insert("componentChecks", {
       auditId: args.auditId,

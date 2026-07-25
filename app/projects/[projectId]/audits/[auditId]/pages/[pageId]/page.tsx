@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronRight, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
@@ -23,8 +23,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-type ComponentScope = "global" | "shared" | "page_specific";
-
 export default function AuditPageDetailPage() {
   const params = useParams<{ projectId: string; auditId: string; pageId: string }>();
   const projectId = params.projectId as Id<"projects">;
@@ -33,6 +31,7 @@ export default function AuditPageDetailPage() {
   const project = useQuery(api.projects.get, { projectId });
   const audit = useQuery(api.audits.get, { auditId });
   const pageDetail = useQuery(api.inventory.getPageDetail, { pageId });
+  const componentTypeOptions = useQuery(api.componentTypes.listActiveOptions);
   const createComponent = useMutation(api.inventory.createComponent);
   const attachComponentToPage = useMutation(api.inventory.attachComponentToPage);
   const deleteComponent = useMutation(api.inventory.removeComponent);
@@ -42,7 +41,6 @@ export default function AuditPageDetailPage() {
   const [existingComponentId, setExistingComponentId] = useState("");
   const [componentName, setComponentName] = useState("");
   const [componentType, setComponentType] = useState("custom");
-  const [componentScope, setComponentScope] = useState<ComponentScope>("shared");
   const [componentDescription, setComponentDescription] = useState("");
   const [instanceNotes, setInstanceNotes] = useState("");
   const [error, setError] = useState("");
@@ -85,7 +83,7 @@ export default function AuditPageDetailPage() {
           pageId,
           name: trimmedName,
           componentType,
-          scope: componentScope,
+          scope: "shared",
           description: componentDescription.trim() || undefined,
           instanceNotes: instanceNotes.trim() || undefined,
         });
@@ -105,13 +103,17 @@ export default function AuditPageDetailPage() {
     setExistingComponentId("");
     setComponentName("");
     setComponentType("custom");
-    setComponentScope("shared");
     setComponentDescription("");
     setInstanceNotes("");
     setError("");
   }
 
-  if (project === undefined || audit === undefined || pageDetail === undefined) {
+  if (
+    project === undefined ||
+    audit === undefined ||
+    pageDetail === undefined ||
+    componentTypeOptions === undefined
+  ) {
     return (
       <AppShell>
         <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600">
@@ -125,12 +127,13 @@ export default function AuditPageDetailPage() {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectId}/audits/${auditId}`, label: "Audit" },
+              { label: "Page not found" },
+            ]}
+          />
           <Card>
             <CardContent className="p-6">
               <h1 className="text-lg font-semibold text-slate-950">Page not found</h1>
@@ -151,23 +154,23 @@ export default function AuditPageDetailPage() {
 
     return component ? [{ instance, component }] : [];
   });
+  const pageAvailableComponents = pageDetail.components.filter(
+    (component) => component.scope !== "global",
+  );
 
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectId}/audits/${auditId}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Home" },
+            { href: `/projects/${projectId}`, label: project.name },
+            { href: `/projects/${projectId}/audits/${auditId}`, label: audit.name },
+            { label: pageDetail.page.name },
+          ]}
+        />
 
         <header className="border-b border-slate-200 pb-6">
-          <p className="text-sm font-medium text-sky-700">
-            {project.name} / {audit.name}
-          </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
             {pageDetail.page.name}
           </h1>
@@ -189,7 +192,7 @@ export default function AuditPageDetailPage() {
             <div>
               <h2 className="text-base font-semibold text-slate-950">Components On This Page</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Add a new component pattern or reuse one already created for this audit.
+                Add a page component pattern or reuse one already created for this audit.
               </p>
             </div>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -203,11 +206,11 @@ export default function AuditPageDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Add component</DialogTitle>
                   <DialogDescription>
-                    Create a component or attach an existing component to this page.
+                    Create a page component or attach an existing page component to this page.
                   </DialogDescription>
                 </DialogHeader>
                 <form className="space-y-4" onSubmit={handleSaveComponent}>
-                  {pageDetail.components.length ? (
+                  {pageAvailableComponents.length ? (
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         onClick={() => setComponentMode("new")}
@@ -236,7 +239,7 @@ export default function AuditPageDetailPage() {
                         value={existingComponentId}
                       >
                         <option value="">Choose a component</option>
-                        {pageDetail.components.map((component) => (
+                        {pageAvailableComponents.map((component) => (
                           <option key={component._id} value={component._id}>
                             {component.name}
                           </option>
@@ -254,38 +257,20 @@ export default function AuditPageDetailPage() {
                           value={componentName}
                         />
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="component-type">Type</Label>
-                          <select
-                            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-                            id="component-type"
-                            onChange={(event) => setComponentType(event.target.value)}
-                            value={componentType}
-                          >
-                            <option value="header">Header</option>
-                            <option value="navigation">Navigation</option>
-                            <option value="footer">Footer</option>
-                            <option value="form">Form</option>
-                            <option value="datatable">Data table</option>
-                            <option value="dialog">Dialog</option>
-                            <option value="accordion">Accordion</option>
-                            <option value="custom">Custom</option>
-                          </select>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="component-scope">Scope</Label>
-                          <select
-                            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
-                            id="component-scope"
-                            onChange={(event) => setComponentScope(event.target.value as ComponentScope)}
-                            value={componentScope}
-                          >
-                            <option value="global">Global</option>
-                            <option value="shared">Shared</option>
-                            <option value="page_specific">Page specific</option>
-                          </select>
-                        </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="component-type">Type</Label>
+                        <select
+                          className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
+                          id="component-type"
+                          onChange={(event) => setComponentType(event.target.value)}
+                          value={componentType}
+                        >
+                          {componentTypeOptions.map((type) => (
+                            <option key={type.key} value={type.key}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="component-description">Description</Label>
@@ -337,7 +322,6 @@ export default function AuditPageDetailPage() {
                 <tr>
                   <th className="px-4 py-3 font-semibold">Component</th>
                   <th className="px-4 py-3 font-semibold">Type</th>
-                  <th className="px-4 py-3 font-semibold">Scope</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 text-right font-semibold">Actions</th>
                 </tr>
@@ -353,7 +337,6 @@ export default function AuditPageDetailPage() {
                         ) : null}
                       </td>
                       <td className="px-4 py-4">{component?.componentType}</td>
-                      <td className="px-4 py-4">{component?.scope.replace("_", " ")}</td>
                       <td className="px-4 py-4">
                         <Badge>{component?.testStatus.replaceAll("_", " ")}</Badge>
                       </td>
@@ -384,7 +367,7 @@ export default function AuditPageDetailPage() {
                   ))
                 ) : (
                   <tr>
-                    <td className="px-4 py-10 text-center text-slate-600" colSpan={5}>
+                    <td className="px-4 py-10 text-center text-slate-600" colSpan={4}>
                       <ClipboardList className="mx-auto mb-3 size-8 text-slate-400" aria-hidden="true" />
                       No components attached to this page yet.
                     </td>
@@ -407,5 +390,47 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
         <p className="mt-1 text-xl font-semibold capitalize text-slate-950">{value}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function Breadcrumbs({
+  items,
+}: {
+  items: Array<{
+    href?: string;
+    label: string;
+  }>;
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className="text-sm">
+      <ol className="flex flex-wrap items-center gap-1 text-slate-600">
+        {items.map((item, index) => {
+          const isCurrent = index === items.length - 1;
+
+          return (
+            <li className="flex min-w-0 items-center gap-1" key={`${item.label}-${index}`}>
+              {index > 0 ? (
+                <ChevronRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+              ) : null}
+              {item.href && !isCurrent ? (
+                <Link
+                  className="truncate font-medium text-sky-700 hover:text-sky-900"
+                  href={item.href}
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <span
+                  aria-current={isCurrent ? "page" : undefined}
+                  className="truncate font-medium text-slate-950"
+                >
+                  {item.label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

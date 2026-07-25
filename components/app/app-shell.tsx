@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { BookOpenCheck, ClipboardList, LayoutDashboard, ListChecks, ScanSearch } from "lucide-react";
+import { BookOpenCheck, LayoutDashboard, Library, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: ClipboardList },
-  { href: "/testing", label: "Testing", icon: ListChecks },
+  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/library", label: "Library", icon: Library },
   { href: "/reference", label: "Reference", icon: BookOpenCheck },
 ];
 
