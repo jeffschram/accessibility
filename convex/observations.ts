@@ -353,16 +353,7 @@ export const remove = mutation({
       return null;
     }
 
-    for (const evidenceId of observation.evidenceIds) {
-      const evidence = await ctx.db.get(evidenceId);
-      if (evidence && !evidence.findingId) {
-        if (evidence.storageId) {
-          await ctx.storage.delete(evidence.storageId);
-        }
-        await ctx.db.delete(evidenceId);
-      }
-    }
-
+    await releaseEvidence(ctx, observation.evidenceIds);
     await ctx.db.delete(args.observationId);
     return args.observationId;
   },
@@ -427,17 +418,8 @@ async function insertObservations(
 
     if (duplicate) {
       await ctx.db.patch(observationId, { ...fields, updatedAt: now });
-
       // Drop the superseded evidence so re-scans do not accumulate screenshots.
-      for (const staleId of duplicate.evidenceIds) {
-        const stale = await ctx.db.get(staleId);
-        if (stale && !stale.findingId) {
-          if (stale.storageId) {
-            await ctx.storage.delete(stale.storageId);
-          }
-          await ctx.db.delete(staleId);
-        }
-      }
+      await releaseEvidence(ctx, duplicate.evidenceIds);
     }
 
     const evidenceIds: Id<"evidence">[] = [];
@@ -475,6 +457,46 @@ async function hydrate(ctx: QueryCtx, observation: Doc<"observations">) {
   );
 
   return { ...observation, evidence: evidence.filter((item) => item !== null) };
+}
+
+/**
+ * Deletes evidence rows, keeping any a human already attached to a finding.
+ *
+ * One scan uploads a single screenshot per page and every observation from that
+ * page references it, so the stored file is only removed once no surviving row
+ * still points at it. Deleting per row would blow away a screenshot another
+ * observation is still showing.
+ */
+async function releaseEvidence(ctx: MutationCtx, evidenceIds: Id<"evidence">[]) {
+  const storageIds = new Set<Id<"_storage">>();
+
+  for (const evidenceId of evidenceIds) {
+    const evidence = await ctx.db.get(evidenceId);
+    if (!evidence || evidence.findingId) {
+      continue;
+    }
+
+    if (evidence.storageId) {
+      storageIds.add(evidence.storageId);
+    }
+
+    await ctx.db.delete(evidenceId);
+  }
+
+  if (!storageIds.size) {
+    return;
+  }
+
+  const remaining = await ctx.db.query("evidence").take(2000);
+  const stillReferenced = new Set(
+    remaining.map((item) => item.storageId).filter(Boolean),
+  );
+
+  for (const storageId of storageIds) {
+    if (!stillReferenced.has(storageId)) {
+      await ctx.storage.delete(storageId);
+    }
+  }
 }
 
 function unique<T>(values: T[]): T[] {
