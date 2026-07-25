@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronRight, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -391,44 +392,3 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Breadcrumbs({
-  items,
-}: {
-  items: Array<{
-    href?: string;
-    label: string;
-  }>;
-}) {
-  return (
-    <nav aria-label="Breadcrumb" className="text-sm">
-      <ol className="flex flex-wrap items-center gap-1 text-slate-600">
-        {items.map((item, index) => {
-          const isCurrent = index === items.length - 1;
-
-          return (
-            <li className="flex min-w-0 items-center gap-1" key={`${item.label}-${index}`}>
-              {index > 0 ? (
-                <ChevronRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-              ) : null}
-              {item.href && !isCurrent ? (
-                <Link
-                  className="truncate font-medium text-sky-700 hover:text-sky-900"
-                  href={item.href}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span
-                  aria-current={isCurrent ? "page" : undefined}
-                  className="truncate font-medium text-slate-950"
-                >
-                  {item.label}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}

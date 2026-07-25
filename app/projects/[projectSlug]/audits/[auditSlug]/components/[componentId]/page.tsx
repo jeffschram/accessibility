@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
-import { ArrowLeft, ClipboardCheck } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -43,12 +42,13 @@ export default function ComponentDetailPage() {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}/audits/${auditSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: "Audit" },
+              { label: "Component not found" },
+            ]}
+          />
           <Card>
             <CardContent className="p-6">
               <h1 className="text-lg font-semibold text-slate-950">Component not found</h1>
@@ -70,19 +70,16 @@ export default function ComponentDetailPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}/audits/${auditSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Home" },
+            { href: `/projects/${projectSlug}`, label: resolved.project.name },
+            { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: resolved.audit.name },
+            { label: component.name },
+          ]}
+        />
 
         <header className="border-b border-slate-200 pb-6">
-          <p className="text-sm font-medium text-sky-700">
-            {resolved.project.name} / {resolved.audit.name}
-          </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
             {component.name}
           </h1>

@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,12 +115,7 @@ export default function ProjectDetailPage() {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href="/">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to home
-            </Link>
-          </Button>
+          <Breadcrumbs items={[{ href: "/", label: "Home" }, { label: "Project not found" }]} />
           <Card>
             <CardHeader>
               <CardTitle>Project not found</CardTitle>
@@ -150,14 +146,7 @@ export default function ProjectDetailPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href="/">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to home
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs items={[{ href: "/", label: "Home" }, { label: project.name }]} />
 
         <header className="border-b border-slate-200 pb-6">
           <div>

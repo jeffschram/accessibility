@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Bot, ClipboardCheck, ExternalLink } from "lucide-react";
+import { Bot, ClipboardCheck, ExternalLink } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -97,12 +97,13 @@ export default function TriageQueuePage() {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to project
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectSlug}`, label: "Project" },
+              { label: "Audit not found" },
+            ]}
+          />
           <Card>
             <CardContent className="p-6">
               <h1 className="text-lg font-semibold text-slate-950">Audit not found</h1>
@@ -129,17 +130,16 @@ export default function TriageQueuePage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}/audits/${auditSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to audit
-            </Link>
-          </Button>
-        </div>
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Home" },
+            { href: `/projects/${projectSlug}`, label: resolved.project.name },
+            { href: `/projects/${projectSlug}/audits/${auditSlug}`, label: resolved.audit.name },
+            { label: "Triage queue" },
+          ]}
+        />
 
         <header className="border-b border-slate-200 pb-6">
-          <p className="text-sm font-medium text-sky-700">{resolved.audit.name}</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">
             Triage queue
           </h1>

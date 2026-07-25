@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ClipboardCheck, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardCheck, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
+import { Breadcrumbs } from "@/components/app/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -138,12 +139,13 @@ export default function AuditDetailPage() {
     return (
       <AppShell>
         <div className="space-y-4">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to project
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectSlug}`, label: "Project" },
+              { label: "Audit not found" },
+            ]}
+          />
           <Card>
             <CardContent className="p-6">
               <h1 className="text-lg font-semibold text-slate-950">Audit not found</h1>
@@ -179,12 +181,13 @@ export default function AuditDetailPage() {
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}`}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Back to project
-            </Link>
-          </Button>
+          <Breadcrumbs
+            items={[
+              { href: "/", label: "Home" },
+              { href: `/projects/${projectSlug}`, label: project.name },
+              { label: audit.name },
+            ]}
+          />
           <Button asChild variant="secondary">
             <Link href={`/projects/${projectSlug}/audits/${auditSlug}/triage`}>
               <ClipboardCheck className="size-4" aria-hidden="true" />
