@@ -215,6 +215,9 @@ export default defineSchema({
   observations: defineTable({
     auditId: v.id("audits"),
     scopeItemId: v.optional(v.id("scopeItems")),
+    // The inventory flow records pages in auditPages, so scans link there.
+    pageId: v.optional(v.id("auditPages")),
+    url: v.optional(v.string()),
     testRunId: v.optional(v.id("testRuns")),
     source: v.union(
       v.literal("automated"),
@@ -236,9 +239,25 @@ export default defineSchema({
       v.literal("dismissed"),
       v.literal("converted_to_finding"),
     ),
+    // How much the producing tool or model trusts this observation. Automated
+    // and AI output stays advisory until a human converts it to a finding.
+    confidence: v.optional(
+      v.union(
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high"),
+        v.literal("needs_review"),
+      ),
+    ),
+    triageNote: v.optional(v.string()),
+    dismissReason: v.optional(v.string()),
+    // Producer-specific context: axe impact/tags, or model + prompt version.
+    metadata: v.optional(v.any()),
     evidenceIds: v.array(v.id("evidence")),
     updatedAt: v.number(),
-  }).index("by_audit", ["auditId"]),
+  })
+    .index("by_audit", ["auditId"])
+    .index("by_audit_status", ["auditId", "status"]),
 
   findings: defineTable({
     auditId: v.id("audits"),
@@ -257,6 +276,10 @@ export default defineSchema({
     priority: severity,
     wcagCriteria: v.array(v.string()),
     affectedScopeItemIds: v.array(v.id("scopeItems")),
+    affectedPageIds: v.optional(v.array(v.id("auditPages"))),
+    // Observations this finding was promoted or merged from, for traceability
+    // back to the evidence a human reviewed.
+    sourceObservationIds: v.optional(v.array(v.id("observations"))),
     userImpact: v.optional(v.string()),
     stepsToReproduce: v.optional(v.string()),
     actualResult: v.optional(v.string()),
