@@ -1,5 +1,9 @@
-import { AxeBuilder } from "@axe-core/playwright";
-import { chromium } from "playwright";
+#!/usr/bin/env node
+/**
+ * Quick single-URL scan that prints to stdout without touching Convex.
+ * Kept as a shorthand for `npm run scan -- --dry-run <url>`; the full worker
+ * (evidence capture and observation intake) lives in scan.mjs.
+ */
 
 const url = process.argv[2];
 
@@ -8,36 +12,6 @@ if (!url) {
   process.exit(1);
 }
 
-const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-const page = await context.newPage();
+process.argv = [process.argv[0], process.argv[1], "--dry-run", url];
 
-try {
-  await page.goto(url, { waitUntil: "networkidle" });
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
-
-  console.log(
-    JSON.stringify(
-      {
-        url,
-        scannedAt: new Date().toISOString(),
-        violations: results.violations.map((violation) => ({
-          id: violation.id,
-          impact: violation.impact,
-          description: violation.description,
-          help: violation.help,
-          tags: violation.tags,
-          nodes: violation.nodes.map((node) => ({
-            target: node.target,
-            html: node.html,
-            failureSummary: node.failureSummary,
-          })),
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-} finally {
-  await browser.close();
-}
+await import("./scan.mjs");

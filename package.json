@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "convex:dev": "convex dev",
+    "scan": "node scripts/scans/scan.mjs",
     "scan:url": "node scripts/scans/scan-url.mjs",
     "build": "next build",
     "start": "next start",
