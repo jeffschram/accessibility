@@ -22,6 +22,8 @@
  *   --concurrency <n>       Parallel page loads while crawling (default 3).
  *   --delay <ms>            Pause between page loads (default 250).
  *   --storage-state <path>  Playwright storage state, for authenticated crawls.
+ *   --cluster               Group pages by rendered structure, not just URL shape.
+ *   --fingerprint-sample <n>  Pages sampled per route pattern (default 3).
  *
  * Authenticated crawling: log in once and save the session with
  *   npx playwright open --save-storage=auth.json https://example.com
@@ -33,6 +35,11 @@ import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import process from "node:process";
 import { createRobotsMatcher } from "../lib/robots.mjs";
+import {
+  chooseRepresentatives,
+  extractSkeleton,
+  fingerprintOf,
+} from "../lib/fingerprint.mjs";
 import {
   isDestructive,
   isHttpUrl,
@@ -101,7 +108,13 @@ async function main() {
     }
   }
 
-  const items = toScopeItems([...found.values()]);
+  let items = toScopeItems([...found.values()]);
+
+  if (options.cluster) {
+    items = await clusterItems(items, options);
+  }
+
+  applyRepresentatives(items);
 
   if (options.outDir) {
     await writeBundle(options.outDir, options, items);
@@ -120,9 +133,11 @@ async function main() {
       url: item.url,
       normalizedUrl: item.normalizedUrl,
       routePattern: item.routePattern,
-      clusterKey: item.routePattern,
+      clusterKey: item.clusterKey ?? item.routePattern,
       clusterSize: item.clusterSize,
+      isRepresentative: item.isRepresentative,
       discoverySource: item.discoverySource,
+      discoveryDepth: item.depth,
     })),
   });
 
@@ -154,6 +169,8 @@ function parseArgs(argv) {
     concurrency: 3,
     delay: 250,
     storageState: null,
+    cluster: false,
+    fingerprintSample: 3,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -199,6 +216,12 @@ function parseArgs(argv) {
       }
       case "--storage-state":
         options.storageState = path.resolve(argv[++index]);
+        break;
+      case "--cluster":
+        options.cluster = true;
+        break;
+      case "--fingerprint-sample":
+        options.fingerprintSample = requirePositive(argv[++index], "--fingerprint-sample");
         break;
       default:
         if (arg.startsWith("--")) {
@@ -437,6 +460,114 @@ async function collectFromSitemaps(sitemapUrls, options) {
 }
 
 /**
+ * Refines clusters by rendered structure.
+ *
+ * Visits a bounded sample per route pattern rather than every page — the point
+ * is to characterize the template, and three examples settle that.
+ */
+async function clusterItems(items, options) {
+  const { chromium } = await import("playwright");
+
+  const byPattern = new Map();
+  for (const item of items) {
+    const entry = byPattern.get(item.routePattern) ?? [];
+    entry.push(item);
+    byPattern.set(item.routePattern, entry);
+  }
+
+  process.stderr.write(
+    `Fingerprinting up to ${options.fingerprintSample} page(s) in each of ` +
+      `${byPattern.size} route pattern(s)\n`,
+  );
+
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ userAgent: USER_AGENT });
+
+  try {
+    for (const [pattern, group] of byPattern) {
+      const sample = group.slice(0, options.fingerprintSample);
+      const fingerprints = [];
+
+      for (const item of sample) {
+        const page = await context.newPage();
+        try {
+          await page.goto(item.normalizedUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
+          });
+          if (options.delay) {
+            await new Promise((resolve) => setTimeout(resolve, options.delay));
+          }
+          const skeleton = await page.evaluate(extractSkeleton);
+          fingerprints.push(fingerprintOf(skeleton));
+        } catch {
+          fingerprints.push(null);
+        } finally {
+          await page.close();
+        }
+      }
+
+      const usable = fingerprints.filter(Boolean);
+      // Sampled pages agreeing means the pattern really is one template, so
+      // the fingerprint can stand for the whole group. Disagreement means the
+      // pattern renders more than one layout — keep the URL shape, which at
+      // least stays honest about the grouping.
+      const consistent = usable.length > 0 && new Set(usable).size === 1;
+      const clusterKey = consistent ? `fp:${usable[0]}` : pattern;
+
+      for (const item of group) {
+        item.clusterKey = clusterKey;
+        item.fingerprintConsistent = consistent;
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+
+  // Patterns sharing a fingerprint are the same template despite different
+  // URL shapes — this is what merges /about, /pricing and /careers.
+  const merged = new Map();
+  for (const item of items) {
+    const entry = merged.get(item.clusterKey) ?? [];
+    entry.push(item);
+    merged.set(item.clusterKey, entry);
+  }
+
+  for (const [, group] of merged) {
+    for (const item of group) {
+      item.clusterSize = group.length;
+    }
+  }
+
+  process.stderr.write(
+    `  ${byPattern.size} route pattern(s) resolved to ${merged.size} template(s)\n`,
+  );
+
+  return items;
+}
+
+/** Flags the pages an auditor should actually test from each cluster. */
+function applyRepresentatives(items) {
+  const clusters = new Map();
+  for (const item of items) {
+    const key = item.clusterKey ?? item.routePattern;
+    const entry = clusters.get(key) ?? [];
+    entry.push(item);
+    clusters.set(key, entry);
+  }
+
+  for (const [, group] of clusters) {
+    const chosen = new Set(
+      chooseRepresentatives(group.map((item) => item.normalizedUrl)),
+    );
+    for (const item of group) {
+      item.isRepresentative = chosen.has(item.normalizedUrl);
+      item.clusterSize ??= group.length;
+    }
+  }
+}
+
+/**
  * Breadth-first same-origin crawl.
  *
  * Covers what a sitemap cannot: sites that publish none, pages omitted from
@@ -630,13 +761,20 @@ function summarize(items) {
   const clusters = new Map();
 
   for (const item of items) {
-    const entry = clusters.get(item.routePattern) ?? {
-      routePattern: item.routePattern,
+    const key = item.clusterKey ?? item.routePattern;
+    const entry = clusters.get(key) ?? {
+      key,
+      routePatterns: new Set(),
       count: 0,
+      representatives: [],
       example: item.normalizedUrl,
     };
     entry.count += 1;
-    clusters.set(item.routePattern, entry);
+    entry.routePatterns.add(item.routePattern);
+    if (item.isRepresentative) {
+      entry.representatives.push(item.normalizedUrl);
+    }
+    clusters.set(key, entry);
   }
 
   return [...clusters.values()].sort((first, second) => second.count - first.count);
@@ -644,14 +782,28 @@ function summarize(items) {
 
 function reportDryRun(items, options) {
   const clusters = summarize(items);
+  const proposed = items.filter((item) => item.isRepresentative).length;
 
   console.log(`Discovered ${items.length} page URL(s) on ${options.origin}`);
-  console.log(`Grouped into ${clusters.length} route pattern(s):\n`);
+  console.log(
+    `Collapsed to ${clusters.length} template(s); ` +
+      `${proposed} page(s) proposed for the audit sample.\n`,
+  );
 
   for (const cluster of clusters) {
-    const label = `${cluster.routePattern}`;
+    const patterns = [...cluster.routePatterns];
+    const label =
+      patterns.length === 1 ? patterns[0] : `${patterns.length} route patterns`;
+
     console.log(`  ${String(cluster.count).padStart(5)}  ${label}`);
-    if (cluster.count > 1) {
+
+    if (patterns.length > 1) {
+      console.log(`         ${patterns.slice(0, 4).join(", ")}${patterns.length > 4 ? ", …" : ""}`);
+    }
+    for (const representative of cluster.representatives) {
+      console.log(`         → audit ${representative}`);
+    }
+    if (!cluster.representatives.length && cluster.count > 1) {
       console.log(`         e.g. ${cluster.example}`);
     }
   }
