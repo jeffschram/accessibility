@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, ClipboardCheck, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
@@ -161,11 +161,17 @@ export default function AuditDetailPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Button asChild variant="secondary">
             <Link href={`/projects/${projectId}`}>
               <ArrowLeft className="size-4" aria-hidden="true" />
               Back to project
+            </Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link href={`/projects/${projectId}/audits/${auditId}/triage`}>
+              <ClipboardCheck className="size-4" aria-hidden="true" />
+              Triage queue
             </Link>
           </Button>
         </div>
