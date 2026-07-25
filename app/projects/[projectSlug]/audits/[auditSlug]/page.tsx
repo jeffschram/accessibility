@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ClipboardCheck, ClipboardList, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardCheck, ClipboardList, Layers, Plus, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
@@ -188,12 +188,20 @@ export default function AuditDetailPage() {
               { label: audit.name },
             ]}
           />
-          <Button asChild variant="secondary">
-            <Link href={`/projects/${projectSlug}/audits/${auditSlug}/triage`}>
-              <ClipboardCheck className="size-4" aria-hidden="true" />
-              Triage queue
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="secondary">
+              <Link href={`/projects/${projectSlug}/audits/${auditSlug}/scope`}>
+                <Layers className="size-4" aria-hidden="true" />
+                Scope review
+              </Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href={`/projects/${projectSlug}/audits/${auditSlug}/triage`}>
+                <ClipboardCheck className="size-4" aria-hidden="true" />
+                Triage queue
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <header className="border-b border-slate-200 pb-6">

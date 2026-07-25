@@ -82,8 +82,32 @@ export function extractStructure() {
       };
     });
 
+  // Controls sharing a visual row rarely share an exact `top`: a button and a
+  // link in one flex row differ by a few pixels through height and alignment
+  // alone. Sorting strictly by top would call that a reordering and flag a
+  // 2.4.3 risk on essentially every page with a toolbar. Group into rows
+  // first, then read each row left to right, the way a person does.
+  const ROW_TOLERANCE_PX = 16;
+
+  const byTop = [...focusable].sort((first, second) => first.top - second.top);
+  const rowOf = new Map();
+  let rowIndex = 0;
+  let rowTop = byTop.length ? byTop[0].top : 0;
+
+  for (const item of byTop) {
+    if (item.top - rowTop > ROW_TOLERANCE_PX) {
+      rowIndex += 1;
+      rowTop = item.top;
+    }
+    rowOf.set(item.domOrder, rowIndex);
+  }
+
   const visualOrder = [...focusable]
-    .sort((first, second) => first.top - second.top || first.left - second.left)
+    .sort(
+      (first, second) =>
+        rowOf.get(first.domOrder) - rowOf.get(second.domOrder) ||
+        first.left - second.left,
+    )
     .map((item) => item.domOrder);
 
   return {
@@ -92,8 +116,9 @@ export function extractStructure() {
     headings,
     landmarks,
     focusable,
-    // Index into focusable, sorted top-to-bottom then left-to-right. If this
-    // differs from 0..n-1 the DOM focus order diverges from the visual order.
+    // Index into focusable, in reading order: rows top to bottom, each row left
+    // to right. Divergence from 0..n-1 means DOM focus order does not match the
+    // visual order — a 2.4.3 signal for a human to check, not a failure.
     visualOrder,
     focusOrderMatchesVisualOrder: visualOrder.every((value, index) => value === index),
   };
