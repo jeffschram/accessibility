@@ -34,6 +34,7 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import process from "node:process";
+import { UsageError, requireConvexId, takeValue } from "../lib/args.mjs";
 import { createRobotsMatcher } from "../lib/robots.mjs";
 import {
   chooseRepresentatives,
@@ -59,6 +60,11 @@ const USER_AGENT =
 let api;
 
 main().catch((error) => {
+  // A mistyped flag deserves the message, not a stack trace.
+  if (error instanceof UsageError) {
+    console.error(`\n${error.message}\n`);
+    process.exit(1);
+  }
   console.error(error instanceof Error ? error.stack : error);
   process.exit(1);
 });
@@ -76,6 +82,38 @@ async function main() {
   }
 
   const dryRun = options.dryRun || !options.auditId;
+
+  // Discovery can run for minutes. Confirm the audit exists before spending
+  // that time, rather than failing on the write at the very end.
+  const client = dryRun ? null : await connect();
+  if (client) {
+    let audit;
+    try {
+      audit = await client.query(api.audits.get, { auditId: options.auditId });
+    } catch (error) {
+      // The 32-character shape check passes for strings Convex still rejects,
+      // because its IDs carry an internal encoding. Translate that rather than
+      // surfacing a validator stack trace.
+      const message = error instanceof Error ? error.message : String(error);
+      if (/ArgumentValidationError|v\.id\(/.test(message)) {
+        throw new UsageError(
+          `"${options.auditId}" is not a valid audit ID.\n` +
+            `Open the audit in the app and copy the ID from its URL.`,
+        );
+      }
+      throw error;
+    }
+
+    if (!audit) {
+      throw new UsageError(
+        `No audit found with ID "${options.auditId}".\n` +
+          `Open the audit in the app and copy the ID from its URL, or run with ` +
+          `--dry-run to preview without writing.`,
+      );
+    }
+
+    process.stderr.write(`Audit: ${audit.name}\n`);
+  }
 
   process.stderr.write(`Discovering ${options.origin}\n`);
 
@@ -125,7 +163,6 @@ async function main() {
     return;
   }
 
-  const client = await connect();
   const result = await client.mutation(api.scope.createBatch, {
     auditId: options.auditId,
     items: items.map((item) => ({
@@ -178,7 +215,7 @@ function parseArgs(argv) {
 
     switch (arg) {
       case "--audit":
-        options.auditId = argv[++index];
+        options.auditId = requireConvexId(takeValue(argv, ++index, "--audit"), "--audit");
         break;
       case "--max": {
         const value = Number(argv[++index]);
@@ -189,7 +226,7 @@ function parseArgs(argv) {
         break;
       }
       case "--out":
-        options.outDir = path.resolve(argv[++index]);
+        options.outDir = path.resolve(takeValue(argv, ++index, "--out"));
         break;
       case "--dry-run":
         options.dryRun = true;
@@ -215,7 +252,7 @@ function parseArgs(argv) {
         break;
       }
       case "--storage-state":
-        options.storageState = path.resolve(argv[++index]);
+        options.storageState = path.resolve(takeValue(argv, ++index, "--storage-state"));
         break;
       case "--cluster":
         options.cluster = true;

@@ -25,6 +25,7 @@ import path from "node:path";
 import process from "node:process";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium } from "playwright";
+import { UsageError, requireConvexId, takeValue } from "../lib/args.mjs";
 import { extractStructure } from "../lib/structure.mjs";
 
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"];
@@ -34,6 +35,11 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 let api;
 
 main().catch((error) => {
+  // A mistyped flag deserves the message, not a stack trace.
+  if (error instanceof UsageError) {
+    console.error(`\n${error.message}\n`);
+    process.exit(1);
+  }
   console.error(error instanceof Error ? error.stack : error);
   process.exit(1);
 });
@@ -102,10 +108,10 @@ function parseArgs(argv) {
 
     switch (arg) {
       case "--audit":
-        options.auditId = argv[++index];
+        options.auditId = requireConvexId(takeValue(argv, ++index, "--audit"), "--audit");
         break;
       case "--base":
-        options.base = argv[++index];
+        options.base = takeValue(argv, ++index, "--base");
         break;
       case "--viewport": {
         const [width, height] = String(argv[++index]).split("x").map(Number);
@@ -116,7 +122,7 @@ function parseArgs(argv) {
         break;
       }
       case "--out":
-        options.outDir = path.resolve(argv[++index]);
+        options.outDir = path.resolve(takeValue(argv, ++index, "--out"));
         break;
       case "--dry-run":
         options.dryRun = true;

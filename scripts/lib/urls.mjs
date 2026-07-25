@@ -208,47 +208,54 @@ export function routePatternFor(rawUrl) {
 export function refineRoutePatterns(urls, threshold = 3) {
   const patterns = new Map(urls.map((url) => [url, routePatternFor(url)]));
 
-  // Collect the distinct child segments seen under each parent, per depth.
-  const childrenByParent = new Map();
-
-  for (const pattern of patterns.values()) {
-    const segments = pattern.split("/").filter(Boolean);
-    for (let depth = 1; depth < segments.length; depth += 1) {
-      const parent = `/${segments.slice(0, depth).join("/")}`;
-      const key = `${depth}|${parent}`;
-      const entry = childrenByParent.get(key) ?? new Set();
-      entry.add(segments[depth]);
-      childrenByParent.set(key, entry);
-    }
-  }
-
-  const collapsed = new Set(
-    [...childrenByParent.entries()]
-      .filter(([, children]) => {
-        const real = [...children].filter((segment) => !segment.startsWith(":"));
-        return real.length >= threshold;
-      })
-      .map(([key]) => key),
+  const deepest = Math.max(
+    0,
+    ...[...patterns.values()].map((pattern) => pattern.split("/").filter(Boolean).length),
   );
 
-  if (!collapsed.size) {
-    return patterns;
-  }
+  // Shallow to deep, one level at a time. Parents must be recomputed from the
+  // patterns as already collapsed: /shop/apparel/tee and /shop/prints/poster
+  // only reveal themselves as one product template once /shop/* has become
+  // /shop/:slug and the products share a parent. Judging every level against
+  // the original paths splits them across per-category parents that each fall
+  // under the threshold.
+  for (let depth = 1; depth < deepest; depth += 1) {
+    const childrenByParent = new Map();
 
-  for (const [url, pattern] of patterns) {
-    const segments = pattern.split("/").filter(Boolean);
-    let changed = false;
-
-    for (let depth = 1; depth < segments.length; depth += 1) {
-      const parent = `/${segments.slice(0, depth).join("/")}`;
-      if (collapsed.has(`${depth}|${parent}`) && !segments[depth].startsWith(":")) {
-        segments[depth] = ":slug";
-        changed = true;
+    for (const pattern of patterns.values()) {
+      const segments = pattern.split("/").filter(Boolean);
+      if (segments.length <= depth) {
+        continue;
       }
+      const parent = `/${segments.slice(0, depth).join("/")}`;
+      const entry = childrenByParent.get(parent) ?? new Set();
+      entry.add(segments[depth]);
+      childrenByParent.set(parent, entry);
     }
 
-    if (changed) {
-      patterns.set(url, `/${segments.join("/")}`);
+    const collapse = new Set(
+      [...childrenByParent.entries()]
+        .filter(([, children]) => {
+          const real = [...children].filter((segment) => !segment.startsWith(":"));
+          return real.length >= threshold;
+        })
+        .map(([parent]) => parent),
+    );
+
+    if (!collapse.size) {
+      continue;
+    }
+
+    for (const [url, pattern] of patterns) {
+      const segments = pattern.split("/").filter(Boolean);
+      if (segments.length <= depth) {
+        continue;
+      }
+      const parent = `/${segments.slice(0, depth).join("/")}`;
+      if (collapse.has(parent) && !segments[depth].startsWith(":")) {
+        segments[depth] = ":slug";
+        patterns.set(url, `/${segments.join("/")}`);
+      }
     }
   }
 
