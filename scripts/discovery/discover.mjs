@@ -9,19 +9,32 @@
  * Usage:
  *   npm run discover -- --dry-run https://example.com
  *   npm run discover -- --audit <auditId> https://example.com
+ *   npm run discover -- --crawl --dry-run https://example.com
  *
  * Options:
- *   --audit <id>       Convex audit ID to file scope items against.
- *   --max <n>          Cap on discovered URLs (default 2000).
- *   --out <dir>        Write the raw discovery result to disk.
- *   --dry-run          Print a grouped summary; do not contact Convex.
+ *   --audit <id>            Convex audit ID to file scope items against.
+ *   --max <n>               Cap on discovered URLs (default 2000).
+ *   --out <dir>             Write the raw discovery result to disk.
+ *   --dry-run               Print a grouped summary; do not contact Convex.
+ *   --crawl                 Also crawl, to catch pages missing from the sitemap.
+ *   --crawl-only            Skip the sitemap and crawl only.
+ *   --depth <n>             Crawl depth (default 3).
+ *   --concurrency <n>       Parallel page loads while crawling (default 3).
+ *   --delay <ms>            Pause between page loads (default 250).
+ *   --storage-state <path>  Playwright storage state, for authenticated crawls.
+ *
+ * Authenticated crawling: log in once and save the session with
+ *   npx playwright open --save-storage=auth.json https://example.com
+ * then pass --storage-state auth.json.
  */
 
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import process from "node:process";
+import { createRobotsMatcher } from "../lib/robots.mjs";
 import {
+  isDestructive,
   isHttpUrl,
   isProbablyPage,
   nameFor,
@@ -49,7 +62,8 @@ async function main() {
   if (!options.origin) {
     console.error(
       "Usage: npm run discover -- --audit <auditId> <url>\n" +
-        "       npm run discover -- --dry-run <url>",
+        "       npm run discover -- --dry-run <url>\n" +
+        "       npm run discover -- --crawl --dry-run <url>",
     );
     process.exit(1);
   }
@@ -65,12 +79,29 @@ async function main() {
     );
   }
 
-  const sitemapUrls = robots.sitemaps.length
-    ? robots.sitemaps
-    : [new URL("/sitemap.xml", options.origin).toString()];
+  const found = new Map();
 
-  const found = await collectFromSitemaps(sitemapUrls, options);
-  const items = toScopeItems(found);
+  if (!options.crawlOnly) {
+    const sitemapUrls = robots.sitemaps.length
+      ? robots.sitemaps
+      : [new URL("/sitemap.xml", options.origin).toString()];
+
+    for (const entry of await collectFromSitemaps(sitemapUrls, options)) {
+      found.set(entry.normalizedUrl, { ...entry, discoverySource: "sitemap", depth: 0 });
+    }
+  }
+
+  if (options.crawl || options.crawlOnly) {
+    // Seeds from the sitemap pass, so the crawl expands coverage rather than
+    // re-walking pages already known.
+    for (const entry of await crawl(options, robots, found)) {
+      if (!found.has(entry.normalizedUrl)) {
+        found.set(entry.normalizedUrl, entry);
+      }
+    }
+  }
+
+  const items = toScopeItems([...found.values()]);
 
   if (options.outDir) {
     await writeBundle(options.outDir, options, items);
@@ -102,6 +133,14 @@ async function main() {
   );
 }
 
+function requirePositive(raw, flag) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${flag} expects a positive number.`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const options = {
     auditId: null,
@@ -109,6 +148,12 @@ function parseArgs(argv) {
     max: 2000,
     outDir: null,
     dryRun: false,
+    crawl: false,
+    crawlOnly: false,
+    depth: 3,
+    concurrency: 3,
+    delay: 250,
+    storageState: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -131,6 +176,29 @@ function parseArgs(argv) {
         break;
       case "--dry-run":
         options.dryRun = true;
+        break;
+      case "--crawl":
+        options.crawl = true;
+        break;
+      case "--crawl-only":
+        options.crawlOnly = true;
+        break;
+      case "--depth":
+        options.depth = requirePositive(argv[++index], "--depth");
+        break;
+      case "--concurrency":
+        options.concurrency = requirePositive(argv[++index], "--concurrency");
+        break;
+      case "--delay": {
+        const value = Number(argv[++index]);
+        if (!Number.isFinite(value) || value < 0) {
+          throw new Error("--delay expects a non-negative number of milliseconds.");
+        }
+        options.delay = value;
+        break;
+      }
+      case "--storage-state":
+        options.storageState = path.resolve(argv[++index]);
         break;
       default:
         if (arg.startsWith("--")) {
@@ -212,7 +280,7 @@ async function fetchText(url) {
 
 /** Reads robots.txt for Sitemap: directives. Disallow rules matter to the crawler. */
 async function fetchRobots(origin) {
-  const result = { sitemaps: [], disallow: [] };
+  const result = { sitemaps: [], disallow: [], allow: [] };
 
   let body;
   try {
@@ -251,6 +319,10 @@ async function fetchRobots(origin) {
 
     if (field === "disallow" && inDefaultAgent && value) {
       result.disallow.push(value);
+    }
+
+    if (field === "allow" && inDefaultAgent && value) {
+      result.allow.push(value);
     }
   }
 
@@ -364,6 +436,142 @@ async function collectFromSitemaps(sitemapUrls, options) {
   return [...urls.values()];
 }
 
+/**
+ * Breadth-first same-origin crawl.
+ *
+ * Covers what a sitemap cannot: sites that publish none, pages omitted from
+ * one, and navigation rendered by JavaScript that a raw fetch never sees.
+ * Runs against client production sites, so robots.txt Disallow rules are
+ * honoured and every request is delayed and capped.
+ */
+async function crawl(options, robots, seeded) {
+  const { chromium } = await import("playwright");
+  const isAllowed = createRobotsMatcher(robots);
+
+  const visited = new Set();
+  const results = new Map();
+  // Sitemap URLs are already known; seeding them stops the crawl re-walking
+  // pages we have, while still letting it follow links out of them.
+  let frontier = [{ url: normalizeUrl(options.origin), depth: 0 }];
+  for (const key of seeded.keys()) {
+    if (!frontier.some((entry) => entry.url === key)) {
+      frontier.push({ url: key, depth: 0 });
+    }
+  }
+
+  const browser = await chromium.launch();
+  const context = await browser.newContext({
+    userAgent: USER_AGENT,
+    ...(options.storageState ? { storageState: options.storageState } : {}),
+  });
+
+  let loginWarned = false;
+
+  try {
+    for (let depth = 0; depth <= options.depth && frontier.length; depth += 1) {
+      const level = frontier.filter((entry) => !visited.has(entry.url));
+      frontier = [];
+
+      process.stderr.write(`  crawl depth ${depth}: ${level.length} page(s)\n`);
+
+      for (let index = 0; index < level.length; index += options.concurrency) {
+        if (visited.size >= options.max) break;
+
+        const batch = level.slice(index, index + options.concurrency);
+        const found = await Promise.all(
+          batch.map(async (entry) => {
+            if (visited.has(entry.url) || visited.size >= options.max) {
+              return [];
+            }
+            visited.add(entry.url);
+
+            const { pathname } = new URL(entry.url);
+            if (!isAllowed(pathname)) {
+              return [];
+            }
+
+            if (options.delay) {
+              await new Promise((resolve) => setTimeout(resolve, options.delay));
+            }
+
+            const page = await context.newPage();
+            try {
+              const response = await page.goto(entry.url, {
+                waitUntil: "domcontentloaded",
+                timeout: 20000,
+              });
+
+              if (response && !response.ok()) {
+                return [];
+              }
+
+              // A crawl that lands on a login page usually means the saved
+              // session expired — warn, but keep going.
+              if (!loginWarned && options.storageState) {
+                const url = page.url();
+                if (/\/(login|signin|sign-in|auth)\b/i.test(url)) {
+                  loginWarned = true;
+                  process.stderr.write(
+                    `  ! redirected to a login page (${url}) — the saved ` +
+                      `storage state may have expired\n`,
+                  );
+                }
+              }
+
+              results.set(entry.url, {
+                url: entry.url,
+                normalizedUrl: entry.url,
+                discoverySource: seeded.has(entry.url) ? "sitemap" : "crawl",
+                depth: entry.depth,
+              });
+
+              const hrefs = await page.$$eval("a[href]", (anchors) =>
+                anchors.map((anchor) => anchor.getAttribute("href") ?? ""),
+              );
+
+              return hrefs
+                .map((href) => normalizeUrl(href, entry.url))
+                .filter(
+                  (href) =>
+                    href &&
+                    sameOrigin(href, options.origin) &&
+                    isProbablyPage(href) &&
+                    !isDestructive(href) &&
+                    !visited.has(href),
+                )
+                .map((href) => ({ url: href, depth: entry.depth + 1 }));
+            } catch {
+              return [];
+            } finally {
+              await page.close();
+            }
+          }),
+        );
+
+        for (const entry of found.flat()) {
+          if (!frontier.some((queued) => queued.url === entry.url)) {
+            frontier.push(entry);
+          }
+        }
+      }
+
+      if (visited.size >= options.max) {
+        process.stderr.write(`  reached --max ${options.max}; stopping crawl\n`);
+        break;
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+
+  const fresh = [...results.values()].filter((entry) => !seeded.has(entry.normalizedUrl));
+  process.stderr.write(
+    `  crawl visited ${visited.size} page(s), ${fresh.length} not in the sitemap\n`,
+  );
+
+  return [...results.values()];
+}
+
 /** Sitemaps are simple enough that a scoped regex beats adding an XML parser. */
 function extractLocs(xml) {
   const locations = [];
@@ -397,7 +605,7 @@ function toScopeItems(found) {
     ...entry,
     name: nameFor(entry.normalizedUrl),
     routePattern: refined.get(entry.normalizedUrl) ?? routePatternFor(entry.normalizedUrl),
-    discoverySource: "sitemap",
+    discoverySource: entry.discoverySource ?? "sitemap",
   }));
 
   const sizes = new Map();
