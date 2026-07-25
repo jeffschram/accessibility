@@ -31,30 +31,27 @@
  */
 
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import process from "node:process";
 import { UsageError, requireConvexId, takeValue } from "../lib/args.mjs";
 import { createRobotsMatcher } from "../lib/robots.mjs";
+import { extractSkeleton, fingerprintOf } from "../lib/fingerprint.mjs";
 import {
-  chooseRepresentatives,
-  extractSkeleton,
-  fingerprintOf,
-} from "../lib/fingerprint.mjs";
+  USER_AGENT,
+  applyRepresentatives,
+  collectFromSitemaps,
+  fetchRobots,
+  toScopeItems,
+} from "../lib/sitemap.mjs";
 import {
   isDestructive,
   isHttpUrl,
   isProbablyPage,
-  nameFor,
   normalizeUrl,
-  refineRoutePatterns,
-  routePatternFor,
   sameOrigin,
 } from "../lib/urls.mjs";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
-const USER_AGENT =
-  "AccessibilityQA-Discovery/1.0 (+accessibility audit tooling; respects robots.txt)";
 
 /** Loaded only when filing to Convex, so dry runs stay dependency-light. */
 let api;
@@ -313,189 +310,6 @@ async function loadEnv() {
   }
 }
 
-async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: { "user-agent": USER_AGENT },
-    redirect: "follow",
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-
-  // Sitemaps are commonly gzipped; some servers omit content-encoding, so
-  // sniff the gzip magic bytes rather than trusting headers.
-  if (url.endsWith(".gz") || (buffer[0] === 0x1f && buffer[1] === 0x8b)) {
-    try {
-      return gunzipSync(buffer).toString("utf8");
-    } catch {
-      return buffer.toString("utf8");
-    }
-  }
-
-  return buffer.toString("utf8");
-}
-
-/** Reads robots.txt for Sitemap: directives. Disallow rules matter to the crawler. */
-async function fetchRobots(origin) {
-  const result = { sitemaps: [], disallow: [], allow: [] };
-
-  let body;
-  try {
-    body = await fetchText(new URL("/robots.txt", origin).toString());
-  } catch {
-    return result;
-  }
-
-  if (!body) {
-    return result;
-  }
-
-  let inDefaultAgent = false;
-
-  for (const rawLine of body.split("\n")) {
-    const line = rawLine.split("#")[0].trim();
-    if (!line) continue;
-
-    const separator = line.indexOf(":");
-    if (separator === -1) continue;
-
-    const field = line.slice(0, separator).trim().toLowerCase();
-    const value = line.slice(separator + 1).trim();
-
-    // Sitemap directives are global, not scoped to a user-agent group.
-    if (field === "sitemap" && value) {
-      const normalized = normalizeUrl(value);
-      if (normalized) result.sitemaps.push(normalized);
-      continue;
-    }
-
-    if (field === "user-agent") {
-      inDefaultAgent = value === "*";
-      continue;
-    }
-
-    if (field === "disallow" && inDefaultAgent && value) {
-      result.disallow.push(value);
-    }
-
-    if (field === "allow" && inDefaultAgent && value) {
-      result.allow.push(value);
-    }
-  }
-
-  return result;
-}
-
-/**
- * Walks sitemaps, following <sitemapindex> entries. A visited set plus a depth
- * cap keeps a self-referencing or circular index from looping forever.
- */
-async function collectFromSitemaps(sitemapUrls, options) {
-  const seenSitemaps = new Set();
-  const urls = new Map();
-  const queue = sitemapUrls.map((url) => ({ url, depth: 0 }));
-  const MAX_DEPTH = 3;
-  // Tracked so an empty result explains itself instead of looking like an
-  // empty site — a host mismatch can otherwise discard an entire sitemap.
-  const rejected = {
-    offSite: 0,
-    offSiteExample: null,
-    notPage: 0,
-    duplicate: 0,
-    unparseable: 0,
-  };
-
-  while (queue.length) {
-    const { url, depth } = queue.shift();
-
-    if (seenSitemaps.has(url) || depth > MAX_DEPTH) {
-      continue;
-    }
-    seenSitemaps.add(url);
-
-    let body;
-    try {
-      body = await fetchText(url);
-    } catch (error) {
-      process.stderr.write(`  ! ${url}: ${error.message}\n`);
-      continue;
-    }
-
-    if (!body) {
-      process.stderr.write(`  ! ${url}: not available\n`);
-      continue;
-    }
-
-    const isIndex = /<sitemapindex[\s>]/i.test(body);
-    const locations = extractLocs(body);
-
-    if (isIndex) {
-      process.stderr.write(`  index ${url} -> ${locations.length} sitemap(s)\n`);
-      for (const location of locations) {
-        queue.push({ url: location, depth: depth + 1 });
-      }
-      continue;
-    }
-
-    let kept = 0;
-    for (const location of locations) {
-      if (urls.size >= options.max) break;
-
-      const normalized = normalizeUrl(location);
-      if (!normalized) {
-        rejected.unparseable += 1;
-        continue;
-      }
-      if (!sameOrigin(normalized, options.origin)) {
-        rejected.offSite += 1;
-        rejected.offSiteExample ??= normalized;
-        continue;
-      }
-      if (!isProbablyPage(normalized)) {
-        rejected.notPage += 1;
-        continue;
-      }
-      if (urls.has(normalized)) {
-        rejected.duplicate += 1;
-        continue;
-      }
-
-      urls.set(normalized, { url: location, normalizedUrl: normalized });
-      kept += 1;
-    }
-
-    process.stderr.write(
-      `  ${url} -> ${kept} page URL(s) of ${locations.length} entry(ies)\n`,
-    );
-
-    if (urls.size >= options.max) {
-      process.stderr.write(`  reached --max ${options.max}; stopping\n`);
-      break;
-    }
-  }
-
-  if (rejected.offSite || rejected.notPage || rejected.duplicate) {
-    process.stderr.write(
-      `  filtered: ${rejected.offSite} off-site, ${rejected.notPage} non-page, ` +
-        `${rejected.duplicate} duplicate\n`,
-    );
-  }
-
-  if (!urls.size && rejected.offSite) {
-    process.stderr.write(
-      `\n  ! Every URL was treated as off-site. The sitemap lists ` +
-        `${rejected.offSiteExample}\n` +
-        `    but you asked for ${options.origin}. Re-run using the host the ` +
-        `site actually publishes.\n\n`,
-    );
-  }
-
-  return [...urls.values()];
-}
-
 /**
  * Refines clusters by rendered structure.
  *
@@ -581,27 +395,6 @@ async function clusterItems(items, options) {
   );
 
   return items;
-}
-
-/** Flags the pages an auditor should actually test from each cluster. */
-function applyRepresentatives(items) {
-  const clusters = new Map();
-  for (const item of items) {
-    const key = item.clusterKey ?? item.routePattern;
-    const entry = clusters.get(key) ?? [];
-    entry.push(item);
-    clusters.set(key, entry);
-  }
-
-  for (const [, group] of clusters) {
-    const chosen = new Set(
-      chooseRepresentatives(group.map((item) => item.normalizedUrl)),
-    );
-    for (const item of group) {
-      item.isRepresentative = chosen.has(item.normalizedUrl);
-      item.clusterSize ??= group.length;
-    }
-  }
 }
 
 /**
@@ -738,60 +531,6 @@ async function crawl(options, robots, seeded) {
   );
 
   return [...results.values()];
-}
-
-/** Sitemaps are simple enough that a scoped regex beats adding an XML parser. */
-function extractLocs(xml) {
-  const locations = [];
-  const pattern = /<loc>\s*([^<]+?)\s*<\/loc>/gi;
-  let match;
-
-  while ((match = pattern.exec(xml)) !== null) {
-    locations.push(decodeXmlEntities(match[1]));
-  }
-
-  return locations;
-}
-
-function decodeXmlEntities(value) {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
-    .replace(/&amp;/g, "&");
-}
-
-function toScopeItems(found) {
-  // Patterns are refined against the whole set: one URL alone cannot reveal
-  // that a plain-word slug is a record rather than a section.
-  const refined = refineRoutePatterns(found.map((entry) => entry.normalizedUrl));
-
-  const items = found.map((entry) => ({
-    ...entry,
-    name: nameFor(entry.normalizedUrl),
-    routePattern: refined.get(entry.normalizedUrl) ?? routePatternFor(entry.normalizedUrl),
-    discoverySource: entry.discoverySource ?? "sitemap",
-  }));
-
-  const sizes = new Map();
-  for (const item of items) {
-    sizes.set(item.routePattern, (sizes.get(item.routePattern) ?? 0) + 1);
-  }
-
-  for (const item of items) {
-    item.clusterSize = sizes.get(item.routePattern);
-  }
-
-  items.sort(
-    (first, second) =>
-      first.routePattern.localeCompare(second.routePattern) ||
-      first.normalizedUrl.localeCompare(second.normalizedUrl),
-  );
-
-  return items;
 }
 
 function summarize(items) {

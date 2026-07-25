@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ClipboardCheck, ClipboardList, Layers, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardCheck, ClipboardList, Layers, Plus, Radar, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { AppShell } from "@/components/app/app-shell";
@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
 type Priority = "critical" | "high" | "medium" | "low";
 
@@ -367,7 +368,13 @@ export default function AuditDetailPage() {
                 Page-level inventory for this audit.
               </p>
             </div>
-            <Dialog open={pageDialogOpen} onOpenChange={setPageDialogOpen}>
+            <div className="flex flex-wrap items-center gap-2">
+              <DiscoverPagesDialog
+                auditId={auditId!}
+                defaultOrigin={audit.environmentUrl ?? ""}
+                scopeHref={`/projects/${projectSlug}/audits/${auditSlug}/scope`}
+              />
+              <Dialog open={pageDialogOpen} onOpenChange={setPageDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="size-4" aria-hidden="true" />
@@ -445,7 +452,8 @@ export default function AuditDetailPage() {
                   </div>
                 </form>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -604,5 +612,160 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
         <p className="mt-1 text-xl font-semibold capitalize text-slate-950">{value}</p>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Runs sitemap discovery for this audit without leaving the app.
+ *
+ * Only the sitemap source is available in-app: crawling and structural
+ * fingerprinting need a real browser, so they stay in the `discover` CLI. The
+ * dialog says so rather than leaving a person wondering why a site with no
+ * sitemap came back empty.
+ */
+function DiscoverPagesDialog({
+  auditId,
+  defaultOrigin,
+  scopeHref,
+}: {
+  auditId: Id<"audits">;
+  defaultOrigin: string;
+  scopeHref: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [origin, setOrigin] = useState(defaultOrigin);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{
+    created: number;
+    updated: number;
+    stats: { discovered: number; templates: number; proposed: number };
+    notes: string[];
+  } | null>(null);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setResult(null);
+
+    const trimmed = origin.trim();
+    if (!trimmed) {
+      setError("Enter the site address to scan.");
+      return;
+    }
+
+    setIsRunning(true);
+    try {
+      const response = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ auditId, origin: trimmed }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.error ?? "Discovery failed.");
+        return;
+      }
+
+      setResult(payload);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Discovery failed.");
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  return (
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setError("");
+          setResult(null);
+        }
+      }}
+      open={open}
+    >
+      <DialogTrigger asChild>
+        <Button variant="secondary">
+          <Radar className="size-4" aria-hidden="true" />
+          Discover pages
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Discover pages</DialogTitle>
+          <DialogDescription>
+            Reads the site&apos;s sitemap, groups the pages by template, and files them
+            for review. Nothing enters the audit until you include it.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="space-y-2">
+            <Label htmlFor="discover-origin">Site address</Label>
+            <Input
+              id="discover-origin"
+              onChange={(event) => setOrigin(event.target.value)}
+              placeholder="https://example.com"
+              value={origin}
+            />
+            <p className="text-xs text-slate-600">
+              Sites without a sitemap need the crawler:{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5">
+                {`npm run discover -- --audit ${auditId} --crawl <url>`}
+              </code>
+            </p>
+          </div>
+
+          {error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </p>
+          ) : null}
+
+          <div aria-live="polite">
+            {result ? (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="font-medium text-slate-950">
+                  Found {result.stats.discovered} page
+                  {result.stats.discovered === 1 ? "" : "s"} in {result.stats.templates}{" "}
+                  template{result.stats.templates === 1 ? "" : "s"}.
+                </p>
+                <p className="mt-1">
+                  {result.created} new, {result.updated} refreshed.{" "}
+                  {result.stats.proposed} proposed for the audit sample.
+                </p>
+                {result.notes.map((note) => (
+                  <p className="mt-1 text-slate-600" key={note}>
+                    {note}
+                  </p>
+                ))}
+                {result.stats.discovered > 0 ? (
+                  <Button asChild className="mt-3" size="sm" variant="secondary">
+                    <Link href={scopeHref}>Review and choose pages</Link>
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              disabled={isRunning}
+              onClick={() => setOpen(false)}
+              type="button"
+              variant="secondary"
+            >
+              {result ? "Close" : "Cancel"}
+            </Button>
+            <Button disabled={isRunning} type="submit">
+              {isRunning ? "Scanning..." : "Scan sitemap"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
